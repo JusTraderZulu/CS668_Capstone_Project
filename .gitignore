@@ -1,0 +1,136 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.env
+.venv
+env/
+ENV/
+env.bak/
+venv.bak/
+venv_*/
+
+# IDE and Editor Files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.#*
+\#*\#
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project Specific
+# Keep CSV files in data directory
+*.csv
+!dql_trading/data/*.csv
+!test_data/*.csv
+
+# Exclude large data files
+dql_trading/data/eurusd_all.csv
+dql_trading/data/*.csv
+!dql_trading/data/test_small.csv
+
+# Results and logs
+results/
+logs/
+mlruns/
+temp/
+plots/
+
+# Model files
+models/
+*.pth
+*.h5
+*.pkl
+*_backup/
+*.bak
+
+# Configuration files with secrets
+*config.ini
+*secrets*
+*credentials*
+telegram_config.sh
+
+# Docker temporary files
+.docker/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyPI/distribution related
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Test files
+test_*.py
+
+# Migration scripts
+migrate_*.py
+
+# Temporary files
+*~
+.#*
+\#*\#
+
+# Our cleanup script
+cleanup.sh
+
+# Test integration directories
+test_feature_integration/
+test_results/
+
+# Remove duplicates from the remaining sections
+# since they're already covered above 

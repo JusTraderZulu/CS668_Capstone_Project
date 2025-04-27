@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include dql_trading/data *.csv *.json
+recursive-include docs *.md *.pdf
+recursive-include examples *.ipynb *.py
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store
+global-exclude .git* 

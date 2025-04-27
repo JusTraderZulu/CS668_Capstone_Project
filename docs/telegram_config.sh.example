@@ -1,0 +1,9 @@
+#!/bin/bash
+# telegram_config.sh - Configuration for Telegram notifications
+# Rename this file to telegram_config.sh and fill in your values
+
+# Your Telegram bot token (from BotFather)
+export TELEGRAM_BOT_TOKEN="your_bot_token_here"
+
+# Your Telegram chat ID
+export TELEGRAM_CHAT_ID="your_chat_id_here" 

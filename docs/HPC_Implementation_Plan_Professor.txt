@@ -1,0 +1,55 @@
+# DQL Trading System HPC Implementation Plan
+
+## Overview
+The Deep Q-Learning (DQL) trading system has been restructured with modularity and portability in mind. This document outlines our plan to adapt the system for High-Performance Computing (HPC) environments to enable large-scale experimentation.
+
+## Current Status
+We have successfully restructured the codebase with:
+- Modular architecture separating agents, environments, and utilities
+- Flexible command-line interface for all workflows
+- Standardized experiment tracking and reporting
+- Comprehensive documentation
+
+## HPC Implementation Strategy
+Our approach follows these steps:
+
+1. **Initial Development & Testing**
+   - Prototype and validate model architectures on local hardware
+   - Perform preliminary hyperparameter optimization with small datasets
+   - Identify the most promising model configurations
+
+2. **HPC Preparation**
+   - Create job submission scripts compatible with SLURM (or other schedulers)
+   - Develop configuration files for experiments
+   - Set up data and model synchronization procedures
+
+3. **HPC Execution**
+   - Run extensive hyperparameter tuning on full datasets
+   - Train final models with optimized parameters
+   - Generate comprehensive performance reports
+
+4. **Results Analysis**
+   - Compare model performance across configurations
+   - Analyze computational efficiency and scaling properties
+   - Extract insights from larger-scale experiments
+
+5. **Remote Monitoring**
+   - Implement Telegram notification system for real-time updates
+   - Receive alerts for job completion, errors, and milestone achievements
+   - Monitor training progress without requiring direct server access
+
+## Benefits
+This approach provides several advantages:
+- Efficient use of computational resources (development on local, intensive computation on HPC)
+- Ability to scale experiments to much larger datasets
+- Parallel execution of multiple model configurations
+- Consistent, reproducible results with proper tracking
+- Real-time monitoring via mobile notifications
+
+## Timeline
+- Local development and testing: Completed
+- HPC script preparation: In progress
+- Initial HPC trials: Planned for next week
+- Full-scale experimentation: Following successful trials
+
+We are confident this implementation plan will enable us to efficiently leverage HPC resources to advance our trading strategy research. 

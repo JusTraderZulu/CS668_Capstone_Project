@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  dql-trading:
+    build: .
+    image: dql-trading:latest
+    volumes:
+      # Mount data directory for persistent storage
+      - ./data:/app/data
+      # Mount results directory to save experiment outputs
+      - ./results:/app/results
+      # Mount logs directory
+      - ./logs:/app/logs
+    environment:
+      # Customize these with your actual credentials
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    # Default command can be overridden when running the container
+    command: ["full-workflow", "--agent_type", "dql", "--data_file", "test_small.csv", "--experiment_name", "docker_test", "--episodes", "10"] 

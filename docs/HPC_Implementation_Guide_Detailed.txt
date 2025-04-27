@@ -1,0 +1,478 @@
+# DQL Trading System HPC Implementation Guide
+
+## System Requirements
+- Python 3.8+ environment
+- PyTorch 1.10+ (with CUDA support if using GPUs)
+- Access to a SLURM-based HPC cluster (instructions can be adapted for other schedulers)
+- Storage for datasets and experimental results
+
+## Preparation Steps
+
+### 1. Code Organization
+Ensure your local codebase is fully functional with this structure:
+```
+DQL_agent/
+├── agents/               # Agent implementations
+├── baseline_strategies/  # Baseline trading algorithms
+├── core/                 # Core training logic
+├── data/                 # Trading datasets
+├── envs/                 # Trading environments
+├── evaluation/           # Evaluation tools
+├── reporting/            # Reporting generation
+├── scripts/              # Workflow scripts
+├── utils/                # Utility functions
+├── dql_trading.py        # Main CLI interface
+├── path_setup.py         # Path configuration
+└── requirements.txt      # Dependencies
+```
+
+### 2. Create HPC Job Scripts
+
+#### a. SLURM Job Submission Script (job_submission.sh)
+```bash
+#!/bin/bash
+#SBATCH --job-name=dql_trading
+#SBATCH --output=logs/%j_output.log
+#SBATCH --error=logs/%j_error.log
+#SBATCH --time=24:00:00
+#SBATCH --mem=16G
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:1  # If you need GPU
+
+# Create logs directory if it doesn't exist
+mkdir -p logs
+
+# Load modules (adjust based on your HPC)
+module load python/3.9
+module load cuda/11.3  # If using GPU
+
+# Create and activate virtual environment
+python -m venv env
+source env/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Function to send Telegram messages
+send_telegram_notification() {
+    local message="$1"
+    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        -d chat_id=${TELEGRAM_CHAT_ID} \
+        -d text="DQL Trading Job ${SLURM_JOB_ID}: ${message}" > /dev/null
+}
+
+# Send start notification
+send_telegram_notification "🚀 Training started for ${EXPERIMENT_NAME}"
+
+# Run your experiment
+python dql_trading.py full-workflow \
+  --agent_type $AGENT_TYPE \
+  --data_file $DATA_FILE \
+  --experiment_name ${EXPERIMENT_NAME}_${SLURM_JOB_ID} \
+  --episodes $EPISODES \
+  --telegram_token ${TELEGRAM_BOT_TOKEN} \
+  --telegram_chat_id ${TELEGRAM_CHAT_ID} \
+  ${EXTRA_ARGS}
+
+# Check exit status
+if [ $? -eq 0 ]; then
+    send_telegram_notification "✅ Training completed successfully for ${EXPERIMENT_NAME}"
+else
+    send_telegram_notification "❌ Training failed for ${EXPERIMENT_NAME}"
+fi
+
+# Consolidate results
+python scripts/consolidate_results.py --experiment ${EXPERIMENT_NAME}_${SLURM_JOB_ID}
+
+# Copy results to persistent storage (adjust path as needed)
+rsync -avz results/ $HOME/persistent_storage/dql_results/
+
+# Send final notification with results summary
+METRICS_SUMMARY=$(grep -A 10 "Final Metrics" logs/${SLURM_JOB_ID}_output.log | tail -n 10)
+send_telegram_notification "📊 Results for ${EXPERIMENT_NAME}:\n${METRICS_SUMMARY}"
+```
+
+#### b. Experiment Launcher Script (run_experiment.sh)
+```bash
+#!/bin/bash
+# run_experiment.sh
+
+# Default values
+AGENT_TYPE="dql"
+DATA_FILE="test_small.csv"
+EXPERIMENT_NAME="hpc_experiment"
+EPISODES=100
+EXTRA_ARGS=""
+
+# Load Telegram credentials from config file (gitignored)
+source telegram_config.sh
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --agent_type)
+      AGENT_TYPE="$2"
+      shift 2
+      ;;
+    --data_file)
+      DATA_FILE="$2"
+      shift 2
+      ;;
+    --experiment_name)
+      EXPERIMENT_NAME="$2"
+      shift 2
+      ;;
+    --episodes)
+      EPISODES="$2"
+      shift 2
+      ;;
+    *)
+      EXTRA_ARGS="$EXTRA_ARGS $1"
+      shift
+      ;;
+  esac
+done
+
+# Export variables for the job script
+export AGENT_TYPE
+export DATA_FILE
+export EXPERIMENT_NAME
+export EPISODES
+export EXTRA_ARGS
+export TELEGRAM_BOT_TOKEN
+export TELEGRAM_CHAT_ID
+
+# Submit the job
+sbatch job_submission.sh
+```
+
+#### c. Hyperparameter Sweep Script (hyperparameter_sweep.sh)
+```bash
+#!/bin/bash
+# hyperparameter_sweep.sh
+
+EXPERIMENT_BASE="hp_sweep"
+AGENT_TYPE="custom"
+DATA_FILE="full_dataset.csv"
+
+# Load Telegram credentials
+source telegram_config.sh
+
+# Send notification about sweep start
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id=${TELEGRAM_CHAT_ID} \
+    -d text="🔍 Starting hyperparameter sweep with ${AGENT_TYPE} agent" > /dev/null
+
+# Learning rates
+for LR in 0.0001 0.0005 0.001; do
+  # Discount factors
+  for GAMMA in 0.95 0.97 0.99; do
+    # Target update frequencies
+    for TARGET_UPDATE in 5 10 20; do
+      EXPERIMENT_NAME="${EXPERIMENT_BASE}_lr${LR}_g${GAMMA}_tu${TARGET_UPDATE}"
+      
+      # Submit job with these hyperparameters
+      export AGENT_TYPE=$AGENT_TYPE
+      export DATA_FILE=$DATA_FILE
+      export EXPERIMENT_NAME=$EXPERIMENT_NAME
+      export EPISODES=500
+      export EXTRA_ARGS="--learning_rate $LR --gamma $GAMMA --target_update_freq $TARGET_UPDATE"
+      export TELEGRAM_BOT_TOKEN
+      export TELEGRAM_CHAT_ID
+      
+      sbatch job_submission.sh
+      
+      # Get the job ID of the submitted job
+      JOB_ID=$(sbatch --parsable job_submission.sh)
+      echo "Submitted experiment: $EXPERIMENT_NAME (Job ID: $JOB_ID)"
+      
+      # Notify about job submission
+      curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id=${TELEGRAM_CHAT_ID} \
+          -d text="🧪 Submitted experiment: ${EXPERIMENT_NAME} (Job ID: ${JOB_ID})" > /dev/null
+      
+      sleep 1  # To prevent overwhelming the scheduler
+    done
+  done
+done
+
+# Send notification about sweep completion
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id=${TELEGRAM_CHAT_ID} \
+    -d text="✅ All hyperparameter sweep jobs submitted successfully" > /dev/null
+```
+
+#### d. Telegram Configuration (telegram_config.sh)
+```bash
+#!/bin/bash
+# telegram_config.sh - Keep this file private and gitignored
+
+# Your Telegram bot token (from BotFather)
+export TELEGRAM_BOT_TOKEN="your_bot_token_here"
+
+# Your Telegram chat ID
+export TELEGRAM_CHAT_ID="your_chat_id_here"
+```
+
+### 3. Setting Up Telegram Notifications
+
+#### a. Create a Telegram Bot
+1. Open Telegram and search for "BotFather"
+2. Start a chat with BotFather and send `/newbot` command
+3. Follow the instructions to create a bot
+4. Once created, you'll receive a token - save this for `TELEGRAM_BOT_TOKEN`
+
+#### b. Get Your Chat ID
+1. Search for "userinfobot" in Telegram
+2. Start a chat and it will display your chat ID
+3. Save this ID for `TELEGRAM_CHAT_ID`
+
+#### c. Add Notification Code to Python Scripts
+Create a utility function in your codebase:
+
+```python
+# utils/notifications.py
+import requests
+import os
+
+def send_telegram_message(message, token=None, chat_id=None):
+    """Send a message via Telegram bot."""
+    token = token or os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = chat_id or os.environ.get('TELEGRAM_CHAT_ID')
+    
+    if not token or not chat_id:
+        print("Telegram notification skipped: missing token or chat ID")
+        return False
+    
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        response = requests.post(url, data=payload)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Failed to send Telegram notification: {e}")
+        return False
+```
+
+#### d. Integrate with Training Code
+Update your training code to send notifications at key points:
+
+```python
+# core/train.py
+import argparse
+from utils.notifications import send_telegram_message
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    # Existing arguments
+    parser.add_argument("--telegram_token", type=str, default=None, help="Telegram bot token")
+    parser.add_argument("--telegram_chat_id", type=str, default=None, help="Telegram chat ID")
+    return parser.parse_args()
+
+def train(args):
+    # Setup
+    send_telegram_message(
+        f"🚀 Training started: {args.experiment_name}\n"
+        f"Agent Type: {args.agent_type}\n"
+        f"Episodes: {args.episodes}",
+        token=args.telegram_token, 
+        chat_id=args.telegram_chat_id
+    )
+    
+    # Training loop
+    for episode in range(args.episodes):
+        # Existing training code...
+        
+        # Send periodic updates
+        if episode > 0 and episode % 10 == 0:
+            send_telegram_message(
+                f"📊 *Progress Update*\n"
+                f"Episode: {episode}/{args.episodes} ({(episode/args.episodes)*100:.1f}%)\n"
+                f"Avg Reward: {avg_reward:.2f}\n"
+                f"Loss: {avg_loss:.4f}\n"
+                f"Epsilon: {epsilon:.4f}",
+                token=args.telegram_token,
+                chat_id=args.telegram_chat_id
+            )
+        
+        # Send milestone notifications
+        if episode > 0 and episode % 100 == 0:
+            # Save checkpoint
+            checkpoint_path = f"results/{args.experiment_name}/checkpoints/model_ep{episode}.pth"
+            agent.save_model(checkpoint_path)
+            
+            send_telegram_message(
+                f"💾 *Checkpoint Saved*\n"
+                f"Episode {episode}/{args.episodes}\n"
+                f"Path: {checkpoint_path}",
+                token=args.telegram_token,
+                chat_id=args.telegram_chat_id
+            )
+    
+    # Final results
+    send_telegram_message(
+        f"✅ *Training Completed*\n"
+        f"Experiment: {args.experiment_name}\n"
+        f"Final Reward: {final_reward:.2f}\n"
+        f"Final Win Rate: {win_rate:.2f}%\n"
+        f"Model saved to: {model_path}",
+        token=args.telegram_token,
+        chat_id=args.telegram_chat_id
+    )
+
+# Error handling
+if __name__ == "__main__":
+    args = parse_args()
+    try:
+        train(args)
+    except Exception as e:
+        send_telegram_message(
+            f"❌ *Error in Training*\n"
+            f"Experiment: {args.experiment_name}\n"
+            f"Error: {str(e)}",
+            token=args.telegram_token,
+            chat_id=args.telegram_chat_id
+        )
+        raise
+```
+
+### 4. Packaging Instructions
+
+#### a. Package code for HPC transfer
+```bash
+# Create deployment package
+tar -czvf dql_trading.tar.gz \
+  agents/ baseline_strategies/ core/ data/ envs/ evaluation/ reporting/ scripts/ utils/ \
+  dql_trading.py path_setup.py requirements.txt README.md \
+  job_submission.sh run_experiment.sh hyperparameter_sweep.sh telegram_config.sh
+```
+
+#### b. Transfer to HPC
+```bash
+# SCP transfer (update with your HPC details)
+scp dql_trading.tar.gz username@hpc.example.edu:~/projects/
+
+# Alternative: Use rsync for larger files
+rsync -avz --progress dql_trading.tar.gz username@hpc.example.edu:~/projects/
+```
+
+## Workflow Instructions
+
+### 1. Local Development
+- Prototype different agent architectures on your MacBook
+- Test with smaller datasets and reduced episodes
+- Identify promising architectures and parameter ranges
+- Example command:
+  ```bash
+  python dql_trading.py train --agent_type custom --data_file test_small.csv --episodes 20
+  ```
+
+### 2. HPC Setup
+```bash
+# On the HPC
+cd ~/projects/
+tar -xzvf dql_trading.tar.gz
+cd dql_trading
+
+# Set up Telegram config (edit with your credentials)
+nano telegram_config.sh
+
+# Make scripts executable
+chmod +x *.sh
+
+# Test run with small dataset
+./run_experiment.sh --agent_type custom --data_file test_small.csv --experiment_name test_run --episodes 5
+```
+
+### 3. HPC Experimentation
+```bash
+# Run individual experiment
+./run_experiment.sh --agent_type custom --data_file full_dataset.csv --experiment_name production_run --episodes 1000
+
+# Or run hyperparameter sweep
+./hyperparameter_sweep.sh
+```
+
+### 4. Monitoring Jobs
+```bash
+# Check job status
+squeue -u $USER
+
+# Check specific job output
+cat logs/JOBID_output.log
+
+# Cancel job if needed
+scancel JOBID
+```
+
+### 5. Results Retrieval
+```bash
+# Download results
+rsync -avz username@hpc.example.edu:~/projects/dql_trading/results/ ./local_results/
+
+# Generate combined report (if needed)
+python scripts/generate_comparison_report.py --results_dir ./local_results
+```
+
+## Optimization Tips
+
+1. **Data Management**
+   - For very large datasets, use the HPC's shared filesystem
+   - Consider preprocessing data on the HPC before training
+   - Use data in chunks if full dataset is too large
+
+2. **Resource Allocation**
+   - Use `--mem` based on model size and dataset
+   - Request GPUs (`--gres=gpu:1`) for deep learning
+   - Adjust `--time` based on episode count and data size
+
+3. **Checkpoint Management**
+   - Save model checkpoints periodically
+   - Implement resume functionality for failed jobs
+   - Use checkpoint rotation to save storage
+
+4. **Debugging**
+   - Start with very small jobs to verify everything works
+   - Use interactive sessions for debugging (`srun --pty bash`)
+   - Monitor memory usage with `sacct -j JOBID --format=JobID,MaxRSS,MaxVMSize`
+
+5. **Telegram Notification Best Practices**
+   - Keep messages concise for readability on mobile devices
+   - Use emojis to quickly indicate status (✅ ❌ 🚀 📊)
+   - Send notifications at meaningful intervals (avoid excessive messaging)
+   - Include critical metrics but don't overload with details
+   - Set up notification groups for different experiment types
+
+## Common Issues and Solutions
+
+1. **Memory Errors**
+   - Increase `--mem` in SLURM script
+   - Reduce batch size in training parameters
+   - Process data in smaller chunks
+
+2. **Job Time Limits**
+   - Increase `--time` allocation
+   - Implement checkpointing to resume training
+   - Split training into multiple sequential jobs
+
+3. **Module Loading Errors**
+   - Verify module names on your specific HPC
+   - Check compatibility between modules
+   - Use `module spider python` to find available versions
+
+4. **Data Access Issues**
+   - Ensure correct paths in scripts
+   - Check file permissions
+   - Use absolute paths when referencing data
+
+5. **Notification Issues**
+   - Verify internet access on HPC nodes (some restrict outbound connections)
+   - Use a proxy if needed for external connections
+   - Consider implementing fallback notification methods (email)
+   - Store sensitive credentials securely and never commit them to version control
+
+Remember to monitor resource usage during your initial runs to optimize your resource requests for subsequent experiments. 
