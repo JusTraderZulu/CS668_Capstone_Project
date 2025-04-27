@@ -132,5 +132,11 @@ cleanup.sh
 test_feature_integration/
 test_results/
 
+# Log files
+*.log
+
+# Generated images
+examples/*.png
+
 # Remove duplicates from the remaining sections
 # since they're already covered above 
