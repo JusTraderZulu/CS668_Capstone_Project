@@ -318,6 +318,45 @@ def parse_args():
     
     return parser.parse_args()
 
+def main(experiments=None, data_file=None, **kwargs):
+    """
+    Main function that can be imported and called from other modules
+    
+    Parameters:
+    -----------
+    experiments : list
+        List of experiment names to compare
+    data_file : str
+        Name of the data file to use
+    **kwargs : dict
+        Additional arguments
+        
+    Returns:
+    --------
+    dict
+        Dictionary containing comparison results
+    """
+    if not experiments:
+        print("Error: No experiments provided for comparison")
+        return None
+        
+    if not data_file:
+        print("Error: No data file provided")
+        return None
+        
+    # Create args similar to what would be parsed from command line
+    class Args:
+        pass
+    
+    args = Args()
+    args.experiments = experiments if isinstance(experiments, list) else [experiments]
+    args.data_file = data_file
+    args.results_dir = kwargs.get('results_dir', 'results')
+    args.output_dir = kwargs.get('output_dir', 'results/comparison')
+    
+    # Run the comparison
+    return compare_strategies(args)
+
 if __name__ == "__main__":
     args = parse_args()
     compare_strategies(args) 

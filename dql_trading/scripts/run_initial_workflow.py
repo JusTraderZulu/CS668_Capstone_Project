@@ -88,7 +88,7 @@ def train_initial_model(args):
     
     # Build command for training
     cmd = [
-        "python", "core/train.py",
+        "python", "dql_trading/core/train.py",
         "--data_file", args.data_file,
         "--experiment_name", args.experiment_name,
         "--episodes", str(args.episodes),
@@ -128,7 +128,7 @@ def run_hyperparameter_tuning(args):
     
     # Build command for hyperparameter tuning
     cmd = [
-        "python", "scripts/run_hyperparameter_tuning.py",
+        "python", "dql_trading/scripts/run_hyperparameter_tuning.py",
         "--data_file", args.data_file,
         "--search_type", "random",
         "--n_iter", str(args.n_iter),
@@ -168,7 +168,7 @@ def generate_basic_report(args):
     
     # Build command for report generation
     cmd = [
-        "python", "scripts/generate_report.py",
+        "python", "dql_trading/scripts/generate_report.py",
         "--experiment", args.experiment_name,
         "--results_dir", args.results_dir
     ]
@@ -213,9 +213,9 @@ def print_next_steps(args):
     
     print("\nNEXT STEPS:")
     print("To train an optimized model using these parameters, run:")
-    print(f"  python scripts/run_full_workflow.py --experiment_name optimized_{args.experiment_name} --data_file {args.data_file} --skip_tuning")
+    print(f"  python dql_trading.py full-workflow --experiment_name optimized_{args.experiment_name} --data_file {args.data_file} --skip_tuning")
     print("\nOr to start fresh with hyperparameter tuning:")
-    print(f"  python scripts/run_full_workflow.py --experiment_name optimized_{args.experiment_name} --data_file {args.data_file}")
+    print(f"  python dql_trading.py full-workflow --experiment_name optimized_{args.experiment_name} --data_file {args.data_file}")
     print("="*80 + "\n")
 
 def run_workflow(args):
@@ -252,6 +252,51 @@ def run_workflow(args):
     print_next_steps(args)
     
     return True
+
+def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, **kwargs):
+    """
+    Main function that can be imported and called from other modules
+    
+    Parameters:
+    -----------
+    data_file : str
+        Name of the data file to use
+    experiment_name : str
+        Name of the experiment
+    episodes : int
+        Number of episodes for training
+    n_iter : int
+        Number of iterations for hyperparameter search
+    **kwargs : dict
+        Additional arguments to pass to the workflow
+        
+    Returns:
+    --------
+    bool
+        True if the workflow completed successfully, False otherwise
+    """
+    # Create args similar to what would be parsed from command line
+    class Args:
+        pass
+    
+    args = Args()
+    args.data_file = data_file
+    args.experiment_name = experiment_name
+    args.episodes = episodes
+    args.n_iter = n_iter
+    args.start_date = kwargs.get('start_date', None)
+    args.end_date = kwargs.get('end_date', None)
+    args.results_dir = kwargs.get('results_dir', 'results')
+    args.tuning_dir = kwargs.get('tuning_dir', 'results/hyperparameter_tuning')
+    args.tuning_episodes = kwargs.get('tuning_episodes', 20)
+    args.optimization_metric = kwargs.get('optimization_metric', 'sharpe_ratio')
+    args.learning_rate = kwargs.get('learning_rate', 0.0001)
+    args.gamma = kwargs.get('gamma', 0.99)
+    args.epsilon = kwargs.get('epsilon', 1.0)
+    args.agent_type = kwargs.get('agent_type', 'dql')
+    args.target_update_freq = kwargs.get('target_update_freq', 10)
+    
+    return run_workflow(args)
 
 if __name__ == "__main__":
     args = parse_args()

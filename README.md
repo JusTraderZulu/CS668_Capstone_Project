@@ -51,7 +51,7 @@ Alternatively, you can clone the repository and use it directly:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/DQL_agent.git
+git clone https://github.com/justinborneo/DQL_agent.git
 cd DQL_agent
 
 # Install dependencies
@@ -86,50 +86,64 @@ See the `examples/` directory for more examples.
 The framework provides a convenient CLI for common operations:
 
 ```bash
-# Train a model
-python dql_trading.py train --data_file=your_data.csv --experiment_name=my_experiment
+# Check dependencies
+python dql_trading.py check-dependencies
 
-# Run the full workflow (hyperparameter tuning + training + evaluation)
-python dql_trading.py full-workflow --data_file=your_data.csv --experiment_name=my_experiment
+# Train a model with testing
+python dql_trading.py train --data_file test_small.csv --experiment_name my_experiment --episodes 100 --test
+
+# Run hyperparameter tuning
+python dql_trading.py tune --data_file test_small.csv --search_type random --n_iter 20
+
+# Initial workflow (training + tuning)
+python dql_trading.py initial-workflow --data_file test_small.csv --experiment_name initial_run --episodes 100 --n_iter 20
+
+# Full workflow (hyperparameter tuning + training + evaluation)
+python dql_trading.py full-workflow --data_file test_small.csv --experiment_name my_experiment
+
+# Skip tuning and use existing parameters
+python dql_trading.py full-workflow --data_file test_small.csv --experiment_name my_experiment --skip_tuning
 
 # Generate a report for an experiment
-python dql_trading.py report --experiment=my_experiment
+python dql_trading.py report --experiment my_experiment
+
+# Evaluate a trained model on new data
+python dql_trading.py evaluate --experiment my_experiment --data_file new_data.csv
+
+# Compare multiple strategies
+python dql_trading.py compare --experiments model1 model2 model3 --data_file test_data.csv
 ```
 
-## Feature Importance Tracking
+## Feature Importance Analysis
 
-The framework includes automatic feature importance tracking, allowing you to understand which features have the most significant impact on your agent's decision-making.
+The framework automatically tracks feature importance during training and testing, helping you understand which features have the most significant impact on your agent's decision-making.
 
-### Complete Experiment Script
+### How Feature Importance Works
 
-The simplest way to run an experiment with feature importance tracking is to use the complete experiment script:
+Feature importance is calculated and integrated into the workflow:
 
-```bash
-# Run a complete experiment with feature importance integration
-python complete_experiment.py --data_file=your_data.csv --experiment_name=my_experiment --episodes=100
-```
+1. **Automatic Tracking**: Feature importance is calculated during training and testing
+2. **Visualization**: Visual representations are saved as PNG files
+3. **Data Storage**: Raw importance values are saved as JSON
+4. **Report Integration**: A dedicated section in reports shows feature importance analysis
 
-This script:
-1. Runs the experiment (training and optional testing)
-2. Automatically captures feature importance data
-3. Generates a complete report with the feature importance section included
+### Accessing Feature Importance Data
 
-### Manual Report Fix
+Feature importance data is available through multiple pathways:
 
-If you've already run experiments using the standard commands, you can add feature importance analysis to existing reports:
+1. **PDF Reports**: Every report contains a "Feature Importance Analysis" section
+2. **JSON Files**: Raw data is stored in `results/experiment_name/feature_importance.json`
+3. **Visualizations**: PNG files in `results/experiment_name/feature_importance.png`
 
-```bash
-# Fix an existing report to include feature importance
-python merge_report_with_features.py <experiment_name>
-```
+Even when feature importance data isn't available, the system will generate a fallback analysis in reports to ensure completeness.
 
-The feature importance tracking works with all experiment types:
-- Training runs
-- Testing runs
-- Hyperparameter tuning
-- Strategy comparison
+### Example Results
 
-As long as your experiment follows the project's standard file structure, the feature importance data will be captured automatically.
+The feature importance section in reports includes:
+- Ranking of features by importance
+- Visualization of importance distributions
+- Analysis of which features drive agent decisions
+- Recommendations based on feature importance
 
 ## Project Structure
 
@@ -172,10 +186,10 @@ If you use this framework in your research, please cite:
 
 ```
 @software{dql_trading_framework,
-  author = {Your Name},
+  author = {Justin Borneo},
   title = {DQL Trading Framework},
   year = {2023},
-  url = {https://github.com/yourusername/DQL_agent}
+  url = {https://github.com/justinborneo/DQL_agent}
 }
 ```
 

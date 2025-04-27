@@ -51,7 +51,7 @@ def run_tuning(args):
     
     # Load and prepare data
     print(f"Loading data from {args.data_file}...")
-    data_path = pkg_resources.resource_filename("dql_trading", f"data/{\1}")
+    data_path = pkg_resources.resource_filename("dql_trading", f"data/{args.data_file}")
     df = load_data(data_path, start_date=args.start_date, end_date=args.end_date)
     
     # Add indicators
@@ -261,6 +261,47 @@ def parse_args():
                         help="Directory to save results")
     
     return parser.parse_args()
+
+def main(data_file=None, search_type="random", n_iter=20, **kwargs):
+    """
+    Main function that can be imported and called from other modules
+    
+    Parameters:
+    -----------
+    data_file : str
+        Name of the data file to use
+    search_type : str
+        Type of search to perform ("random" or "grid")
+    n_iter : int
+        Number of iterations for random search
+    **kwargs : dict
+        Additional arguments to pass to the hyperparameter tuning
+        
+    Returns:
+    --------
+    dict
+        Dictionary containing the optimal parameters found
+    """
+    # Create args similar to what would be parsed from command line
+    class Args:
+        pass
+    
+    args = Args()
+    args.data_file = data_file
+    args.search_type = search_type
+    args.n_iter = n_iter
+    args.episodes = kwargs.get('episodes', 20)
+    args.metric = kwargs.get('metric', 'sharpe_ratio')
+    args.start_date = kwargs.get('start_date', None)
+    args.end_date = kwargs.get('end_date', None)
+    args.results_dir = kwargs.get('results_dir', 'results/hyperparameter_tuning')
+    args.train_split = kwargs.get('train_split', 0.8)
+    args.n_jobs = kwargs.get('n_jobs', 1)
+    args.seed = kwargs.get('seed', 42)
+    args.top_n = kwargs.get('top_n', 5)
+    
+    # Run hyperparameter tuning
+    return run_tuning(args)
 
 if __name__ == "__main__":
     args = parse_args()

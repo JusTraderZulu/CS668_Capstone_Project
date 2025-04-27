@@ -115,53 +115,64 @@ def create_evaluation_report(eval_results, agent, env, output_dir="results"):
     print(f"Total Reward: {eval_results['total_reward']:.2f}")
     print(f"Total Return: {metrics['total_return_pct']:.2f}%")
     print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.4f}")
-    print(f"Sortino Ratio: {metrics['sortino_ratio']:.4f}")
-    print(f"Max Drawdown: {metrics['max_drawdown']*100:.2f}%")
-    print(f"Total Trades: {metrics['total_trades']}")
     
-    if metrics['total_trades'] > 0:
+    if 'sortino_ratio' in metrics:
+        print(f"Sortino Ratio: {metrics['sortino_ratio']:.4f}")
+    
+    print(f"Max Drawdown: {metrics.get('max_drawdown', 0)*100:.2f}%")
+    print(f"Total Trades: {metrics.get('total_trades', 0)}")
+    
+    if metrics.get('total_trades', 0) > 0 and 'win_rate' in metrics:
         print(f"Win Rate: {metrics['win_rate']*100:.2f}%")
-        print(f"Profit Factor: {metrics['profit_factor']:.2f}")
+        if 'profit_factor' in metrics:
+            print(f"Profit Factor: {metrics['profit_factor']:.2f}")
     
     if 'buy_hold_return_pct' in metrics:
         print(f"Buy & Hold Return: {metrics['buy_hold_return_pct']:.2f}%")
         print(f"Strategy vs B&H: {metrics['strategy_vs_buy_hold']:.2f}%")
     
     # 2. Create performance dashboard
-    print("\n📈 Creating performance dashboard...")
-    dashboard_fig = create_performance_dashboard(
-        account_values=eval_results['account_values'],
-        trade_log=eval_results['trade_log'],
-        price_history=eval_results['price_history'],
-        metrics=metrics
-    )
-    dashboard_path = os.path.join(output_dir, "performance_dashboard.png")
-    dashboard_fig.savefig(dashboard_path)
-    print(f"Performance dashboard saved to {dashboard_path}")
+    try:
+        print("\n📈 Creating performance dashboard...")
+        dashboard_fig = create_performance_dashboard(
+            account_values=eval_results['account_values'],
+            trade_log=eval_results['trade_log'],
+            title="Performance Dashboard"
+        )
+        dashboard_path = os.path.join(output_dir, "performance_dashboard.png")
+        dashboard_fig.savefig(dashboard_path)
+        print(f"Performance dashboard saved to {dashboard_path}")
+    except Exception as e:
+        print(f"Could not create performance dashboard: {e}")
     
     # 3. Create trades analysis
-    if eval_results['trade_log']:
-        print("\n🔍 Creating trades analysis...")
-        trades_fig = create_trades_analysis(
-            trade_log=eval_results['trade_log'],
-            price_history=eval_results['price_history']
-        )
-        trades_path = os.path.join(output_dir, "trades_analysis.png")
-        trades_fig.savefig(trades_path)
-        print(f"Trades analysis saved to {trades_path}")
+    try:
+        if eval_results.get('trade_log', []):
+            print("\n🔍 Creating trades analysis...")
+            from dql_trading.utils.metrics import create_trades_analysis
+            trades_fig = create_trades_analysis(
+                trade_log=eval_results['trade_log'],
+                price_history=eval_results.get('price_history', [])
+            )
+            trades_path = os.path.join(output_dir, "trades_analysis.png")
+            trades_fig.savefig(trades_path)
+            print(f"Trades analysis saved to {trades_path}")
+    except (ImportError, Exception) as e:
+        print(f"Could not create trades analysis: {e}")
     
     # 4. Create feature importance visualization
-    print("\n🧩 Creating feature importance visualization...")
     try:
+        print("\n🧩 Creating feature importance visualization...")
+        from dql_trading.envs.feature_tracking import create_feature_importance_visualization
         fi_fig = create_feature_importance_visualization(
             agent=agent,
             env=env,
-            num_samples=min(1000, len(eval_results['price_history']))
+            num_samples=min(1000, len(eval_results.get('price_history', [])))
         )
         fi_path = os.path.join(output_dir, "feature_importance.png")
         fi_fig.savefig(fi_path)
         print(f"Feature importance visualization saved to {fi_path}")
-    except Exception as e:
+    except (ImportError, Exception) as e:
         print(f"Could not create feature importance visualization: {e}")
     
     # 5. Save metrics to CSV
@@ -171,38 +182,53 @@ def create_evaluation_report(eval_results, agent, env, output_dir="results"):
     print(f"Metrics saved to {metrics_path}")
     
     # 6. Save trade log to CSV
-    if eval_results['trade_log']:
+    if eval_results.get('trade_log', []):
         trades_df = pd.DataFrame(eval_results['trade_log'])
         trades_path = os.path.join(output_dir, "trades.csv")
         trades_df.to_csv(trades_path, index=False)
         print(f"Trade log saved to {trades_path}")
 
-def main():
+def main(experiment=None, data_file=None):
     """
     Main function that loads a trained agent and evaluates it
+    
+    Parameters:
+    -----------
+    experiment : str
+        Name of the experiment
+    data_file : str
+        Name of the data file
     """
     print("=" * 50)
-    print("📊 EUR/USD DQL Trading Agent Evaluation")
+    print(f"📊 DQL Trading Agent Evaluation: {experiment}")
     print("=" * 50)
     
+    if not experiment:
+        print("\n⚠️ No experiment name provided. Please specify an experiment name.")
+        return
+    
+    if not data_file:
+        print("\n⚠️ No data file provided. Please specify a data file.")
+        return
+    
     # Check if model exists
-    model_path = os.path.join("models", "dql_agent.pth")
+    model_path = os.path.join("results", experiment, "model.pth")
     if not os.path.exists(model_path):
-        print(f"\n⚠️ Model not found at {model_path}. Please train the model first using train.py.")
+        print(f"\n⚠️ Model not found at {model_path}. Please train the model first.")
         return
     
     # Load and prepare data
     print("\n📈 Loading and preparing data...")
     data_path = pkg_resources.resource_filename("dql_trading", f"data/{data_file}")
     # For debugging: use a smaller date range
-    df = load_data(data_path, start_date="2023-01-01", end_date="2023-02-01")
+    df = load_data(data_path)
     
     # Split data into train and trade sets
-    _, trade_df = split_data(df, train_end="2023-01-21", trade_start="2023-01-21", trade_end="2023-02-01")
+    _, trade_df = split_data(df)
     
     # Create a trading configuration
     trader_config = TraderConfig(
-        name="EUR/USD Strategy",
+        name=f"{experiment} Evaluation",
         risk_tolerance="medium",
         reward_goal="sharpe_ratio",
         max_drawdown=0.08,
@@ -246,8 +272,24 @@ def main():
     print("\n🧪 Evaluating agent on test data...")
     eval_results = evaluate_agent(agent, trade_env, render=False)
     
-    # Generate comprehensive evaluation report
-    create_evaluation_report(eval_results, agent, trade_env)
+    # Create output directory
+    output_dir = os.path.join("results", experiment, "evaluation")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    try:
+        # Generate comprehensive evaluation report 
+        create_evaluation_report(eval_results, agent, trade_env, output_dir=output_dir)
+    except Exception as e:
+        print(f"\n⚠️ Error generating evaluation report: {e}")
+        # Fallback to basic metrics
+        print("\n📊 Evaluation Results:")
+        metrics = eval_results['metrics']
+        print(f"Total Reward: {eval_results['total_reward']:.2f}")
+        print(f"Total Return: {metrics['total_return_pct']:.2f}%")
+        print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.4f}")
+        if 'win_rate' in metrics:
+            print(f"Win Rate: {metrics['win_rate']*100:.2f}%")
+        print(f"Total Trades: {metrics.get('total_trades', 0)}")
     
     return eval_results
 

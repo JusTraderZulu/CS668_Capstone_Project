@@ -6,13 +6,14 @@ import os
 import matplotlib.pyplot as plt
 
 from dql_trading import DQLAgent, ForexTradingEnv, TraderConfig
-from dql_trading.utils.data_processing import load_data, split_data, add_indicators
+from dql_trading.utils.data_processing import load_data, split_data, add_indicators, visualize_trade_actions
 from dql_trading.utils.metrics import calculate_trading_metrics, create_performance_dashboard
-from dql_trading.utils.visualization import visualize_trade_actions
 
 # Load and prepare data
 data_file = "test_small.csv"
-df = load_data(os.path.join("data", data_file))
+# Use the path relative to the project root
+data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dql_trading", "data", data_file)
+df = load_data(data_path)
 df = add_indicators(df)
 
 # Split data into train and test sets
@@ -36,7 +37,7 @@ env_params = {
     "initial_amount": 10000,
     "transaction_cost_pct": 0.001,
     "reward_scaling": 1.0,
-    "tech_indicator_list": ["close", "rsi_14", "ema_9", "ema_21"]
+    "tech_indicator_list": ["close"]  # Using only 'close' as the indicator
 }
 
 # Create the training environment

@@ -244,4 +244,47 @@ def run_workflow(args):
 if __name__ == "__main__":
     args = parse_args()
     success = run_workflow(args)
-    sys.exit(0 if success else 1) 
+    sys.exit(0 if success else 1)
+
+def main(data_file=None, experiment_name=None, skip_tuning=False, agent_type="dql", **kwargs):
+    """
+    Main function that can be imported and called from other modules
+    
+    Parameters:
+    -----------
+    data_file : str
+        Name of the data file to use
+    experiment_name : str
+        Name of the experiment
+    skip_tuning : bool
+        Whether to skip the hyperparameter tuning step
+    agent_type : str
+        Type of agent to create ("dql" or "custom")
+    **kwargs : dict
+        Additional arguments to pass to the workflow
+    
+    Returns:
+    --------
+    bool
+        True if the workflow completed successfully, False otherwise
+    """
+    # Create args similar to what would be parsed from command line
+    class Args:
+        pass
+    
+    args = Args()
+    args.data_file = data_file
+    args.experiment_name = experiment_name
+    args.skip_tuning = skip_tuning
+    args.agent_type = agent_type
+    args.episodes = kwargs.get('episodes', 100)
+    args.tuning_episodes = kwargs.get('tuning_episodes', 20)
+    args.n_iter = kwargs.get('n_iter', 20)
+    args.optimization_metric = kwargs.get('optimization_metric', 'sharpe_ratio')
+    args.target_update_freq = kwargs.get('target_update_freq', 10)
+    args.results_dir = kwargs.get('results_dir', 'results')
+    args.tuning_dir = kwargs.get('tuning_dir', 'results/hyperparameter_tuning')
+    args.start_date = kwargs.get('start_date', None)
+    args.end_date = kwargs.get('end_date', None)
+    
+    return run_workflow(args) 

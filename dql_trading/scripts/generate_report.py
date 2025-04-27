@@ -1084,21 +1084,70 @@ def force_add_feature_importance(report, feature_importance_data, feature_import
     
     return True
 
-if __name__ == "__main__":
-    args = parse_args()
+def setup_logging():
+    """Configure logging for the script"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("report_generation.log"),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    return logging.getLogger("report_generator")
+
+def main(experiment=None, results_dir="results"):
+    """
+    Main function that can be imported and called from other modules
     
-    # Set log level
-    logging.getLogger().setLevel(getattr(logging, args.log_level))
+    Parameters:
+    -----------
+    experiment : str
+        Name of the experiment to generate a report for
+    results_dir : str
+        Directory containing results
+        
+    Returns:
+    --------
+    bool
+        True if the report was successfully generated, False otherwise
+    """
+    logger = logging.getLogger("report_generator")
     
     try:
+        if not experiment:
+            logger.error("Error: Experiment name is required")
+            return False
+        
+        # Run the report generation using the generate_report function
         report_path = generate_report(
-            experiment_name=args.experiment,
-            results_dir=args.results_dir,
-            output_dir=args.output_dir
+            experiment_name=experiment,
+            results_dir=results_dir
         )
-        logger.info(f"Report successfully generated at: {report_path}")
-        sys.exit(0)
+        
+        if report_path and os.path.exists(report_path):
+            logger.info(f"Report successfully generated at: {report_path}")
+            return True
+        else:
+            logger.error("Failed to generate report")
+            return False
     except Exception as e:
-        logger.error(f"Report generation failed: {e}")
+        logger.error(f"Error generating report: {str(e)}")
         logger.error(traceback.format_exc())
-        sys.exit(1) 
+        return False
+
+if __name__ == "__main__":
+    # Set up logging
+    logger = setup_logging()
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Generate a report for a DQL trading experiment")
+    parser.add_argument("--experiment", type=str, required=True, help="Name of the experiment to generate a report for")
+    parser.add_argument("--results_dir", type=str, default="results", help="Directory containing results")
+    args = parser.parse_args()
+    
+    # Call the main function with command line arguments
+    success = main(experiment=args.experiment, results_dir=args.results_dir)
+    
+    # Exit with an appropriate code
+    sys.exit(0 if success else 1) 

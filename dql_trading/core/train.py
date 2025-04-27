@@ -860,7 +860,7 @@ def main(**kwargs):
         args = argparse.Namespace(**kwargs)
     
     # Load optimal parameters if specified
-    if args.load_optimal_params and os.path.exists(args.load_optimal_params):
+    if hasattr(args, 'load_optimal_params') and args.load_optimal_params and os.path.exists(args.load_optimal_params):
         print(f"Loading optimal parameters from {args.load_optimal_params}")
         with open(args.load_optimal_params, 'r') as f:
             optimal_params = json.load(f)

@@ -28,6 +28,9 @@ import argparse
 import subprocess
 import time
 import importlib.util
+import logging
+from pathlib import Path
+from importlib import import_module
 
 def check_dependency(module_name):
     """Check if a module is available"""
@@ -47,6 +50,8 @@ def parse_args():
     train_parser.add_argument("--agent_type", type=str, default="dql", choices=["dql", "custom"], 
                                help="Type of agent to create")
     train_parser.add_argument("--test", action="store_true", help="Run testing after training")
+    train_parser.add_argument("--load_optimal_params", type=str, default=None, 
+                             help="Path to optimal parameters JSON file from hyperparameter tuning")
     
     # Initial workflow command
     init_parser = subparsers.add_parser("initial-workflow", 
@@ -74,6 +79,10 @@ def parse_args():
                              choices=["random", "grid"], help="Type of search")
     tune_parser.add_argument("--n_iter", type=int, default=20, 
                                help="Number of iterations for random search")
+    tune_parser.add_argument("--train_split", type=float, default=0.8,
+                             help="Train/test split ratio")
+    tune_parser.add_argument("--episodes", type=int, default=20,
+                             help="Number of episodes for each evaluation")
     
     # Report command
     report_parser = subparsers.add_parser("report", help="Generate a report for an experiment")
@@ -124,6 +133,63 @@ def check_dependencies():
         print("pip install -r requirements.txt")
         return False
 
+def report(args):
+    """Generate a report for a DQL trading experiment.
+    
+    Args:
+        args: argparse.Namespace with the CLI arguments
+    """
+    logger = logging.getLogger('dql_trading.cli')
+    
+    try:
+        # Check if the experiment name is provided
+        if not args.experiment:
+            logger.error("Error: Experiment name is required for report generation")
+            return 1
+            
+        # Import the generate_report module and use its main function
+        try:
+            from dql_trading.scripts.generate_report import main as generate_report_main
+            
+            # Call the main function directly
+            success = generate_report_main(
+                experiment=args.experiment,
+                results_dir=args.results_dir
+            )
+            
+            return 0 if success else 1
+            
+        except ImportError as e:
+            logger.error(f"Error importing report generation module: {str(e)}")
+            return 1
+        except Exception as e:
+            logger.error(f"Error generating report: {str(e)}")
+            logger.error(f"Details: {type(e).__name__}: {str(e)}")
+            return 1
+    except Exception as e:
+        logger.error(f"Unexpected error in report command: {str(e)}")
+        return 1
+
+def add_report_parser(subparsers):
+    """Add the report command parser to the subparsers object."""
+    parser = subparsers.add_parser(
+        'report', 
+        help='Generate a report for a DQL trading experiment'
+    )
+    parser.add_argument(
+        '--experiment', 
+        type=str, 
+        required=True,
+        help='Name of the experiment to generate a report for'
+    )
+    parser.add_argument(
+        '--results_dir', 
+        type=str, 
+        default='results',
+        help='Directory containing results'
+    )
+    parser.set_defaults(func=report)
+
 def main():
     """Main function that handles command-line interface"""
     start_time = time.time()
@@ -158,13 +224,53 @@ def main():
         if args.command == "train":
             # Using direct imports for training
             from dql_trading.core.train import main as train_main
-            train_main(
-                data_file=args.data_file,
-                experiment_name=args.experiment_name,
-                episodes=args.episodes,
-                agent_type=args.agent_type,
-                test=args.test
-            )
+            # Create a dictionary with all args and with defaults for any missing args
+            train_args = {
+                'data_file': args.data_file,
+                'experiment_name': args.experiment_name,
+                'episodes': args.episodes,
+                'agent_type': args.agent_type,
+                'test': args.test,
+                'load_optimal_params': args.load_optimal_params,
+                'log_dir': 'logs',                     # default log_dir
+                'progress_bar': False,                 # default progress_bar
+                'live_plot': False,                    # default live_plot
+                'generate_report': True,               # default generate_report
+                'viz_interval': 10,                    # default viz_interval
+                'risk_tolerance': 'medium',            # default risk_tolerance
+                'reward_goal': 'sharpe_ratio',         # default reward_goal
+                'initial_amount': 100000,              # default initial_amount
+                'transaction_cost': 0.0001,            # default transaction_cost
+                'reward_scaling': 1e-4,                # default reward_scaling
+                'indicators': None,                    # default indicators
+                
+                # Date range parameters
+                'start_date': None,                    # default start_date
+                'end_date': None,                      # default end_date
+                'train_end': None,                     # default train_end
+                'trade_start': None,                   # default trade_start
+                'trade_end': None,                     # default trade_end
+                
+                # Trading strategy parameters
+                'strategy_name': 'Default Strategy',   # default strategy_name
+                'max_drawdown': 0.1,                   # default max_drawdown
+                'target_volatility': 0.02,             # default target_volatility
+                'stop_loss': 0.03,                     # default stop_loss
+                'take_profit': 0.05,                   # default take_profit
+                'position_sizing': 'dynamic',          # default position_sizing
+                'slippage': 0.0002,                    # default slippage
+                
+                # Agent parameters
+                'gamma': 0.99,                         # default gamma
+                'learning_rate': 1e-4,                 # default learning_rate
+                'epsilon': 1.0,                        # default epsilon
+                'epsilon_min': 0.01,                   # default epsilon_min
+                'epsilon_decay': 0.995,                # default epsilon_decay
+                'buffer_size': 10000,                  # default buffer_size
+                'batch_size': 64,                      # default batch_size
+                'target_update_freq': 10,              # default target_update_freq
+            }
+            train_main(**train_args)
             
         elif args.command == "initial-workflow":
             from dql_trading.scripts.run_initial_workflow import main as workflow_main
@@ -189,15 +295,13 @@ def main():
             tune_main(
                 data_file=args.data_file,
                 search_type=args.search_type,
-                n_iter=args.n_iter
+                n_iter=args.n_iter,
+                train_split=args.train_split,
+                episodes=args.episodes
             )
             
         elif args.command == "report":
-            from dql_trading.scripts.generate_report import main as report_main
-            report_main(
-                experiment=args.experiment,
-                results_dir=args.results_dir
-            )
+            report(args)
             
         elif args.command == "evaluate":
             from dql_trading.evaluation.evaluate import main as eval_main
