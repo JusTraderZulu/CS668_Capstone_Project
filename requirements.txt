@@ -28,7 +28,7 @@ joblib>=1.1.0
 plotly>=5.3.0
 reportlab>=3.6.0
 pillow>=9.0.0
-fpdf>=1.7.2
+fpdf2>=2.7.3  # modern maintained fork providing `from fpdf import FPDF`
 
 # Trading Specific
 # ===============
@@ -38,4 +38,10 @@ vectorbt>=0.25.5  # Trading backtesting and analysis
 # ===================
 pytest>=6.0.0
 jupyter>=1.0.0  # For notebook development
-ipywidgets>=7.6.0  # For interactive notebooks 
+ipywidgets>=7.6.0  # For interactive notebooks
+
+# Technical Indicators
+ta>=0.10.2
+
+# Packaging helper (provides pkg_resources used for data paths)
+setuptools>=58.0.0 
