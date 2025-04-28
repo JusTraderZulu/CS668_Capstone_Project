@@ -20,7 +20,7 @@ from utils.metrics import calculate_trading_metrics, create_performance_dashboar
 # Add import for baseline strategies
 from baseline_strategies.baseline_agents import MovingAverageCrossoverAgent, RSIAgent, BuyAndHoldAgent
 # Add import for reporting module
-from reporting.reporting import TradingReport
+from dql_trading.reporting import TradingReport
 
 def train_agent(args, experiment_name: str):
     """
@@ -698,6 +698,12 @@ def train_agent(args, experiment_name: str):
             'Environment Parameters': env_params,
             'Trader Configuration': trader_config.as_dict()
         })
+
+        # Add feature importance section
+        report.add_feature_importance(
+            feature_importance_data=feature_importance,
+            feature_importance_path=os.path.join(results_dir, "feature_importance.png")
+        )
         
         # Add conclusion
         report.add_conclusion(

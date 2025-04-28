@@ -17,102 +17,43 @@ This framework provides a complete pipeline for training, evaluating, and deploy
 - **MLflow Integration**: Track experiments and metrics
 - **Docker Support**: Containerized deployment
 
-## Getting Started
+## Quick Start (CLI-only)
 
-### Install via pip
-
-The easiest way to use the DQL Trading Framework is to install it via pip:
+All functionality is exposed through **one entry point**:
 
 ```bash
-pip install dql-trading
+python dql_trading.py <command> [options]
 ```
 
-After installation, you can:
-
-```python
-# Import components
-from dql_trading import DQLAgent, ForexTradingEnv, TraderConfig
-
-# Create and use objects
-config = TraderConfig(name="My Strategy", risk_tolerance=0.2)
-agent = DQLAgent(state_dim=10, action_dim=3, gamma=0.99)
-```
-
-You can also use the command-line interface:
+First install the dependencies (if you just cloned the repo):
 
 ```bash
-# Train a model
-dql-trading train --data_file=your_data.csv --experiment_name=my_experiment
-```
-
-### Clone and Run
-
-Alternatively, you can clone the repository and use it directly:
-
-```bash
-# Clone the repository
-git clone https://github.com/justinborneo/DQL_agent.git
-cd DQL_agent
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Run a command
-python dql_trading.py train --data_file=your_data.csv --experiment_name=my_experiment
 ```
 
-### Using as a Python Package
+### Typical Researcher Workflow
 
-You can import and use the components directly in your Python code:
+| Step | Command | Why you might run it |
+|------|---------|----------------------|
+| 0. Verify environment | `python dql_trading.py check-dependencies` | Confirms Python packages (numpy, torch, etc.) are installed. |
+| 1. Quick train & test | `python dql_trading.py train --data_file test_small.csv --experiment_name exp1 --episodes 50 --test` | Fast iteration: trains for *N* episodes and immediately evaluates on the hold-out set. Generates a PDF report with feature-importance. |
+| 2. Hyper-parameter search | `python dql_trading.py tune --data_file test_small.csv --search_type random --n_iter 30` | Finds better agent parameters via random/grid search. Stores `optimal_parameters.json`. |
+| 3. Initial workflow | `python dql_trading.py initial-workflow --data_file test_small.csv --experiment_name exp2 --episodes 100 --n_iter 30` | Runs tuning *then* trains a model with the best parameters. Good starting point for a new dataset. |
+| 4. Full workflow | `python dql_trading.py full-workflow --data_file test_small.csv --experiment_name exp3` | Hyper-parameter tuning → training → evaluation → PDF report, fully automated. |
+| 5. Skip tuning reuse | `python dql_trading.py full-workflow --data_file test_small.csv --experiment_name exp3 --skip_tuning` | Retrain/evaluate using previously discovered optimal parameters. |
+| 6. Generate / rebuild report | `python dql_trading.py report --experiment exp1` | Re-creates `results/exp1/exp1_report.pdf` without retraining. Handy after manually modifying figures. |
+| 7. Evaluate on fresh data | `python dql_trading.py evaluate --experiment exp1 --data_file new_data.csv` | Tests a saved model on unseen market data. |
+| 8. Compare strategies | `python dql_trading.py compare --experiments exp1 exp2 exp3 --data_file test_small.csv` | Produces side-by-side performance charts & metrics. |
 
-```python
-import os
-import sys
-# Add the repository to the Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+Each command writes all artifacts to `results/<experiment_name>/`, including:
 
-# Import components
-from dql_trading import DQLAgent, ForexTradingEnv, TraderConfig
+* `*_report.pdf` – PDF with dynamic Table-of-Contents, Feature-Importance, etc.
+* `feature_importance.(json|png)` – raw scores & visualization
+* `training_plots.png`, `learning_curves.png`, dashboards, etc.
 
-# Create and use objects
-config = TraderConfig(name="My Strategy", risk_tolerance=0.2)
-agent = DQLAgent(state_dim=10, action_dim=3, gamma=0.99)
-```
+> Tip: run small episode counts first to validate pipeline, then scale up.
 
-See the `examples/` directory for more examples.
-
-## Command Line Interface
-
-The framework provides a convenient CLI for common operations:
-
-```bash
-# Check dependencies
-python dql_trading.py check-dependencies
-
-# Train a model with testing
-python dql_trading.py train --data_file test_small.csv --experiment_name my_experiment --episodes 100 --test
-
-# Run hyperparameter tuning
-python dql_trading.py tune --data_file test_small.csv --search_type random --n_iter 20
-
-# Initial workflow (training + tuning)
-python dql_trading.py initial-workflow --data_file test_small.csv --experiment_name initial_run --episodes 100 --n_iter 20
-
-# Full workflow (hyperparameter tuning + training + evaluation)
-python dql_trading.py full-workflow --data_file test_small.csv --experiment_name my_experiment
-
-# Skip tuning and use existing parameters
-python dql_trading.py full-workflow --data_file test_small.csv --experiment_name my_experiment --skip_tuning
-
-# Generate a report for an experiment
-python dql_trading.py report --experiment my_experiment
-
-# Evaluate a trained model on new data
-python dql_trading.py evaluate --experiment my_experiment --data_file new_data.csv
-
-# Compare multiple strategies
-python dql_trading.py compare --experiments model1 model2 model3 --data_file test_data.csv
-```
+See `python dql_trading.py --help` for full argument lists.
 
 ## Feature Importance Analysis
 
@@ -188,7 +129,7 @@ If you use this framework in your research, please cite:
 @software{dql_trading_framework,
   author = {Justin Borneo},
   title = {DQL Trading Framework},
-  year = {2023},
+  year = {2025},
   url = {https://github.com/justinborneo/DQL_agent}
 }
 ```

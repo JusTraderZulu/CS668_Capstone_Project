@@ -16,7 +16,7 @@ import traceback
 import logging
 import shutil
 from PyPDF2 import PdfReader, PdfWriter
-from dql_trading.reporting.reporting import TradingReport
+from dql_trading.reporting import TradingReport
 
 # Configure logging
 logging.basicConfig(

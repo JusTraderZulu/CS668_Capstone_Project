@@ -107,8 +107,19 @@ def create_feature_importance_visualization(env_wrapper, save_path=None):
     importance = env_wrapper.get_feature_importance()
     history = env_wrapper.get_importance_history()
     
-    # Create figure
-    fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+    # ------------------------------------------------------------------
+    # Dynamically size the figure based on how many features we need to
+    # display.  Each horizontal bar needs some vertical space; otherwise
+    # long feature lists get squashed or clipped when the image is scaled
+    # down to fit in the PDF.
+    # ------------------------------------------------------------------
+
+    n_features = len(importance)
+    # Allocate ~0.4 inch per feature for the bar plot plus 4 inches for the
+    # evolution plot and margins.  Minimum height 8 inches, maximum 18.
+    fig_height = min(18, max(8, 0.4 * n_features + 4))
+
+    fig, axes = plt.subplots(2, 1, figsize=(12, fig_height))
     
     # 1. Current importance
     feature_names = list(importance.keys())

@@ -65,7 +65,7 @@ if missing_deps:
 # Now we can import from the package (only if dependencies are installed)
 try:
     from dql_trading import DQLAgent, ForexTradingEnv, TraderConfig
-    from dql_trading.reporting.reporting import TradingReport
+    from dql_trading.reporting import TradingReport
     
     # ------------------------------------------------------------
     # Example 1: Basic imports and object creation

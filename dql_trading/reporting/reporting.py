@@ -197,8 +197,22 @@ class TradingReport:
         self.pdf = TradingReportPDF(experiment_name)
         self.report_path = os.path.join(output_dir, f"{experiment_name}_report.pdf")
         
+        # --- Tracking for dynamic table of contents --------------------
+        # key -> starting page number where section begins
+        self._section_pages: Dict[str, int] = {}
+        # page number where the TOC placeholder lives (inserted right after
+        #   the title page).  We fill it at generate() time.
+        self._toc_page_no: Optional[int] = None
+        
     def add_title_page(self, title: str, subtitle: str = None, date: str = None):
-        """Add a title page to the report"""
+        """Add a title page to the report
+
+        Immediately after creating the title page we insert *another* blank
+        page that will hold the Table-of-Contents.  We record its page number
+        so that we can come back and fill it in when `generate()` is called.
+        """
+
+        # --- Title Page (page 1) --------------------------------------
         self.pdf.add_page()
         
         # Add logo if available
@@ -229,9 +243,16 @@ class TradingReport:
             self.pdf.ln(10)
             self.pdf.cell(0, 10, f"Generated on: {date}", 0, 1, "C")
         
+        # --- Insert TOC placeholder (page 2) ---------------------------
+        self.pdf.add_page()
+        self._toc_page_no = self.pdf.page_no()
+        
     def add_executive_summary(self, train_summary: Dict[str, Any], test_summary: Optional[Dict[str, Any]] = None):
         """Add an executive summary section to the report"""
         self.pdf.add_page()
+        # Record starting page for TOC
+        self._section_pages["Executive Summary"] = self.pdf.page_no()
+
         self.pdf.chapter_title("Executive Summary")
         
         # Introduction text
@@ -279,6 +300,7 @@ class TradingReport:
     def add_training_metrics(self, metrics: Dict[str, Any], training_plots_path: str, learning_curves_path: str):
         """Add training metrics and visualizations to the report"""
         self.pdf.add_page()
+        self._section_pages["Training Performance Analysis"] = self.pdf.page_no()
         self.pdf.chapter_title("Training Performance Analysis")
         
         # Overview text
@@ -323,6 +345,7 @@ class TradingReport:
     def add_testing_metrics(self, metrics: Dict[str, Any], performance_dashboard_path: str, trade_visualization_path: str):
         """Add testing metrics and visualizations to the report"""
         self.pdf.add_page()
+        self._section_pages["Out-of-Sample Testing Results"] = self.pdf.page_no()
         self.pdf.chapter_title("Out-of-Sample Testing Results")
         
         # Overview text
@@ -363,6 +386,7 @@ class TradingReport:
     def add_baseline_comparison(self, dql_metrics: Dict[str, Any], baseline_metrics: Dict[str, Dict[str, Any]], comparison_chart_path: str):
         """Add baseline comparison to the report"""
         self.pdf.add_page()
+        self._section_pages["Comparison with Baseline Strategies"] = self.pdf.page_no()
         self.pdf.chapter_title("Comparison with Baseline Strategies")
         
         # Overview text
@@ -422,6 +446,7 @@ class TradingReport:
     def add_hyperparameter_analysis(self, parameters: Dict[str, Dict[str, Any]]):
         """Add hyperparameter analysis to the report"""
         self.pdf.add_page()
+        self._section_pages["Model Configuration and Hyperparameters"] = self.pdf.page_no()
         self.pdf.chapter_title("Model Configuration and Hyperparameters")
         
         # Overview text
@@ -487,6 +512,7 @@ class TradingReport:
         print(f"DEBUG: test_feature_importance_path: {test_feature_importance_path}")
         
         self.pdf.add_page()
+        self._section_pages["Feature Importance Analysis"] = self.pdf.page_no()
         self.pdf.chapter_title("Feature Importance Analysis")
         
         # Overview text
@@ -660,6 +686,7 @@ class TradingReport:
     def add_conclusion(self, key_findings: List[str], recommendations: List[str]):
         """Add conclusion and recommendations to the report"""
         self.pdf.add_page()
+        self._section_pages["Conclusion and Recommendations"] = self.pdf.page_no()
         self.pdf.chapter_title("Conclusion and Recommendations")
         
         # Key findings
@@ -685,40 +712,36 @@ class TradingReport:
         
     def generate(self) -> str:
         """Generate the final PDF report and return the file path"""
-        # Create output directory if it doesn't exist
+        # Ensure output folder exists
         os.makedirs(self.output_dir, exist_ok=True)
-        
-        # Add table of contents
-        self.pdf.add_page()
-        self.pdf.chapter_title("Table of Contents")
-        
-        # Get metadata about sections in the document
-        print("DEBUG: Generating table of contents")
-        
-        # Manually create table of contents (since FPDF doesn't support automatic TOC)
-        toc_items = [
-            ("Executive Summary", 2),
-            ("Training Performance Analysis", 3),
-            ("Out-of-Sample Testing Results", 4),
-            ("Comparison with Baseline Strategies", 5),
-            ("Model Configuration and Hyperparameters", 6),
-            ("Feature Importance Analysis", 7),
-            ("Conclusion and Recommendations", 8)
-        ]
-        
-        for item, page in toc_items:
-            try:
-                self.pdf.cell(0, 10, item, 0, 0)
-                self.pdf.cell(0, 10, str(page), 0, 1, "R")
-                print(f"DEBUG: Added TOC item: {item} (page {page})")
-            except Exception as e:
-                print(f"DEBUG: Error adding TOC item {item}: {e}")
-        
+
+        # --------------------------------------------------------------
+        # Populate the Table-of-Contents placeholder with real numbers
+        # --------------------------------------------------------------
+        if self._toc_page_no is not None:
+            current_page = self.pdf.page_no()
+            # Jump to the TOC page we inserted right after the title page
+            self.pdf.page = self._toc_page_no
+
+            self.pdf.chapter_title("Table of Contents")
+
+            ordered_keys = [
+                "Executive Summary",
+                "Training Performance Analysis",
+                "Out-of-Sample Testing Results",
+                "Comparison with Baseline Strategies",
+                "Model Configuration and Hyperparameters",
+                "Feature Importance Analysis",
+                "Conclusion and Recommendations",
+            ]
+            for key in ordered_keys:
+                page_no = self._section_pages.get(key, "-")
+                self.pdf.cell(0, 10, key, 0, 0)
+                self.pdf.cell(0, 10, str(page_no), 0, 1, "R")
+
+            # Return to the last page so any further modifications are safe
+            self.pdf.page = current_page
+
         # Output the PDF
-        try:
-            self.pdf.output(self.report_path)
-            print(f"DEBUG: PDF saved to {self.report_path}")
-            return self.report_path
-        except Exception as e:
-            print(f"DEBUG: Error saving PDF: {e}")
-            raise 
+        self.pdf.output(self.report_path)
+        return self.report_path 

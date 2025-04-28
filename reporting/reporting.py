@@ -519,7 +519,8 @@ class TradingReport:
             ("Out-of-Sample Testing Results", 4),
             ("Comparison with Baseline Strategies", 5),
             ("Model Configuration and Hyperparameters", 6),
-            ("Conclusion and Recommendations", 7)
+            ("Feature Importance Analysis", 7),
+            ("Conclusion and Recommendations", 8)
         ]
         
         for item, page in toc_items:

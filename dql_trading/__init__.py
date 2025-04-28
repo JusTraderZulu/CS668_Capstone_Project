@@ -41,7 +41,7 @@ try:
     from dql_trading.envs.trading_env import ForexTradingEnv, TraderConfig
 
     # Additional useful imports
-    from dql_trading.reporting.reporting import TradingReport
+    from dql_trading.reporting import TradingReport
     from dql_trading.evaluation.evaluate import evaluate_agent
 
     __all__ = [

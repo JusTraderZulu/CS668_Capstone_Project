@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import logging
 import traceback
-from reporting.reporting import TradingReport
+from dql_trading.reporting import TradingReport
 from utils.metrics import calculate_trading_metrics
 
 # Configure logging
