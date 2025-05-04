@@ -58,7 +58,15 @@ def compare_strategies(args):
     
     # Add technical indicators
     # Define indicator columns based on what our add_indicators function creates
-    indicator_columns = ["SMA_14", "RSI_14", "MACD", "MACD_signal", "BB_upper", "BB_middle", "BB_lower"]
+    indicator_columns = [
+        "SMA_14",
+        "RSI_14",
+        "macd",  # lowercase to align with add_indicators
+        "macd_signal",
+        "BB_upper",
+        "BB_middle",
+        "BB_lower",
+    ]
     print(f"Adding technical indicators: {indicator_columns}")
     df = add_indicators(df)
     
@@ -264,6 +272,36 @@ def compare_strategies(args):
             'Profit Factor': round(metrics.get('profit_factor', 0), 4)
         })
     
+    # ------------------------------------------------------------------
+    # Append metrics from pre-trained experiment runs provided via
+    # --experiments (only summary metrics, no curve plotted).
+    # ------------------------------------------------------------------
+
+    if hasattr(args, 'experiments') and args.experiments:
+        for exp_name in args.experiments:
+            metrics_file = os.path.join('results', exp_name, 'test_metrics.csv')
+            if not os.path.exists(metrics_file):
+                # Fall back to training metrics if test not available
+                metrics_file = os.path.join('results', exp_name, 'training_metrics.csv')
+            if os.path.exists(metrics_file):
+                try:
+                    exp_metrics_df = pd.read_csv(metrics_file)
+                    if not exp_metrics_df.empty:
+                        m = exp_metrics_df.iloc[0].to_dict()
+                        metrics_data.append({
+                            'Strategy': exp_name,
+                            'Total Return (%)': round(m.get('total_return_pct', 0), 2),
+                            'Sharpe Ratio': round(m.get('sharpe_ratio', 0), 4),
+                            'Max Drawdown (%)': round(m.get('max_drawdown', 0) * 100, 2),
+                            'Win Rate': round(m.get('win_rate', 0), 4),
+                            'Total Trades': m.get('total_trades', 0),
+                            'Profit Factor': round(m.get('profit_factor', 0), 4),
+                        })
+                except Exception as e:
+                    print(f"Warning: Could not read metrics for experiment {exp_name}: {e}")
+            else:
+                print(f"Warning: Metrics file not found for experiment {exp_name}: {metrics_file}")
+    
     # Create DataFrame and save to CSV
     metrics_df = pd.DataFrame(metrics_data)
     metrics_path = os.path.join(results_dir, "performance_metrics.csv")
@@ -274,11 +312,25 @@ def compare_strategies(args):
         mlflow.end_run()
     
     # Print summary
-    print("\n" + "=" * 50)
-    print("STRATEGY COMPARISON SUMMARY:")
-    print("=" * 50)
-    print(metrics_df.to_string(index=False))
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print("STRATEGY COMPARISON SUMMARY (Top rows sorted by Sharpe):")
+    print("=" * 60)
+
+    # Sort by Sharpe for display convenience
+    display_df = metrics_df.sort_values("Sharpe Ratio", ascending=False).reset_index(drop=True)
+
+    # Try to pretty-print using tabulate or markdown
+    try:
+        from tabulate import tabulate
+        print(tabulate(display_df, headers="keys", tablefmt="github", showindex=False))
+    except ImportError:
+        # Fall back to pandas markdown if notebook, else plain string
+        try:
+            print(display_df.to_markdown(index=False))
+        except Exception:
+            print(display_df.to_string(index=False))
+
+    print("=" * 60)
     print(f"Results saved to {results_dir}")
     
     return metrics_df
@@ -349,10 +401,43 @@ def main(experiments=None, data_file=None, **kwargs):
         pass
     
     args = Args()
+    
+    # Core parameters provided by caller ---------------------------------
     args.experiments = experiments if isinstance(experiments, list) else [experiments]
     args.data_file = data_file
+
+    # Directories ---------------------------------------------------------
     args.results_dir = kwargs.get('results_dir', 'results')
     args.output_dir = kwargs.get('output_dir', 'results/comparison')
+
+    # Optional date-range filters (defaults: use full dataset) ------------
+    args.start_date = kwargs.get('start_date', None)
+    args.end_date = kwargs.get('end_date', None)
+    args.train_end = kwargs.get('train_end', None)
+    args.trade_start = kwargs.get('trade_start', None)
+    args.trade_end = kwargs.get('trade_end', None)
+
+    # Environment and trader defaults ------------------------------------
+    args.initial_amount = kwargs.get('initial_amount', 100000)
+    args.transaction_cost = kwargs.get('transaction_cost', 0.0001)
+    args.reward_scaling = kwargs.get('reward_scaling', 1e-4)
+
+    args.indicators = kwargs.get('indicators', None)
+
+    # Trader config defaults
+    args.risk_tolerance = kwargs.get('risk_tolerance', 'medium')
+    args.reward_goal = kwargs.get('reward_goal', 'sharpe_ratio')
+    args.max_drawdown = kwargs.get('max_drawdown', 0.1)
+    args.target_volatility = kwargs.get('target_volatility', 0.02)
+    args.stop_loss = kwargs.get('stop_loss', 0.03)
+    args.take_profit = kwargs.get('take_profit', 0.05)
+    args.position_sizing = kwargs.get('position_sizing', 'dynamic')
+    args.slippage = kwargs.get('slippage', 0.0002)
+
+    # DQL model path and hyperparams (unused for baseline compare)
+    args.dql_model = kwargs.get('dql_model', None)
+    args.gamma = kwargs.get('gamma', 0.99)
+    args.learning_rate = kwargs.get('learning_rate', 1e-4)
     
     # Run the comparison
     return compare_strategies(args)

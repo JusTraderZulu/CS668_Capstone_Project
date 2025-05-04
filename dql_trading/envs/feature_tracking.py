@@ -50,7 +50,29 @@ class FeatureTrackingWrapper(gym.Wrapper):
     """Wrapper that tracks feature importance during training"""
     def __init__(self, env):
         super().__init__(env)
-        self.feature_names = self.env.get_feature_names() if hasattr(self.env, 'get_feature_names') else [f"Feature_{i}" for i in range(self.observation_space.shape[0])]
+        # ------------------------------------------------------------------
+        # Build feature_names to exactly match the flattened state vector.
+        # For lookback_window > 1 we append lag suffixes (t, t-1, ...).
+        # This ensures the correlation tracker has a label for every column
+        # and that the visualisation shows *all* features.
+        # ------------------------------------------------------------------
+
+        base_feature_names = (
+            self.env.get_feature_names()
+            if hasattr(self.env, 'get_feature_names') else
+            [f"Feature_{i}" for i in range(getattr(self.env, '_feature_len', self.observation_space.shape[0]))]
+        )
+
+        lookback = getattr(self.env, 'lookback_window', 1)
+        if lookback <= 1:
+            self.feature_names = base_feature_names
+        else:
+            names = []
+            # Most-recent timestep gets no suffix / _t0; older lags get _t-k
+            for lag in reversed(range(lookback)):
+                suffix = "" if lag == 0 else f"_t-{lag}"
+                names.extend([f"{n}{suffix}" for n in base_feature_names])
+            self.feature_names = names
         self.feature_importance = {name: [] for name in self.feature_names}
         self.episode_states = []
         self.episode_rewards = []

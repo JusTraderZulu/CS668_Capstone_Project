@@ -47,11 +47,23 @@ def parse_args():
     train_parser.add_argument("--data_file", type=str, required=True, help="Data file name")
     train_parser.add_argument("--experiment_name", type=str, required=True, help="Experiment name")
     train_parser.add_argument("--episodes", type=int, default=100, help="Number of episodes")
-    train_parser.add_argument("--agent_type", type=str, default="dql", choices=["dql", "custom"], 
-                               help="Type of agent to create")
+    train_parser.add_argument("--agent_type", type=str, default="dql", choices=["dql", "custom", "memory"], 
+                               help="Type of RL agent to use")
     train_parser.add_argument("--test", action="store_true", help="Run testing after training")
     train_parser.add_argument("--load_optimal_params", type=str, default=None, 
                              help="Path to optimal parameters JSON file from hyperparameter tuning")
+    train_parser.add_argument("--train_frac", type=float, default=0.65,
+                             help="Fraction of data used for training (chronological order)")
+    train_parser.add_argument("--val_frac", type=float, default=0.20,
+                             help="Fraction of data used for validation / tuning")
+    train_parser.add_argument("--target_update_freq", type=int, default=10,
+                              help="How often (episodes) to update the target network")
+    train_parser.add_argument("--notify", action="store_true",
+                               help="Send Telegram message when training completes (requires env vars)")
+    train_parser.add_argument("--generate_report", dest="generate_report", action="store_true", default=True,
+                              help="Generate a PDF performance report after training (default: on)")
+    train_parser.add_argument("--no_report", dest="generate_report", action="store_false",
+                              help="Disable report generation after training")
     
     # Initial workflow command
     init_parser = subparsers.add_parser("initial-workflow", 
@@ -69,7 +81,7 @@ def parse_args():
     full_parser.add_argument("--experiment_name", type=str, required=True, help="Experiment name")
     full_parser.add_argument("--skip_tuning", action="store_true", 
                               help="Skip hyperparameter tuning")
-    full_parser.add_argument("--agent_type", type=str, default="dql", choices=["dql", "custom"], 
+    full_parser.add_argument("--agent_type", type=str, default="dql", choices=["dql", "custom", "memory"], 
                                help="Type of agent to create")
     
     # Tune command
@@ -235,7 +247,7 @@ def main():
                 'log_dir': 'logs',                     # default log_dir
                 'progress_bar': False,                 # default progress_bar
                 'live_plot': False,                    # default live_plot
-                'generate_report': True,               # default generate_report
+                'generate_report': args.generate_report,
                 'viz_interval': 10,                    # default viz_interval
                 'risk_tolerance': 'medium',            # default risk_tolerance
                 'reward_goal': 'sharpe_ratio',         # default reward_goal
@@ -268,7 +280,12 @@ def main():
                 'epsilon_decay': 0.995,                # default epsilon_decay
                 'buffer_size': 10000,                  # default buffer_size
                 'batch_size': 64,                      # default batch_size
-                'target_update_freq': 10,              # default target_update_freq
+                'target_update_freq': args.target_update_freq,
+                'notify': getattr(args, 'notify', False),
+
+                # New split fractions
+                'train_frac': args.train_frac,
+                'val_frac': args.val_frac,
             }
             train_main(**train_args)
             

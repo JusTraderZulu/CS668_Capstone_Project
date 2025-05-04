@@ -41,4 +41,44 @@ def send_telegram_message(message, token=None, chat_id=None):
         return success
     except Exception as e:
         logger.error(f"Failed to send Telegram notification: {e}")
+        return False
+
+# ------------------------------------------------------------------
+# New helper: send files (PDF, images) via Telegram
+# ------------------------------------------------------------------
+
+def send_telegram_document(file_path, caption=None, token=None, chat_id=None):
+    """Send a document (e.g., PDF) through the bot.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the file to upload.
+    caption : str, optional
+        Optional caption (supports Markdown).
+    token, chat_id : str, optional
+        Overrides for env vars TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
+    """
+    token = token or os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID")
+
+    if not token or not chat_id:
+        logger.info("Telegram document skipped: missing token or chat ID")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendDocument"
+    try:
+        with open(file_path, "rb") as fh:
+            files = {"document": fh}
+            data = {"chat_id": chat_id, "caption": caption or "", "parse_mode": "Markdown"}
+            response = requests.post(url, data=data, files=files, timeout=30)
+            success = response.status_code == 200
+
+            if success:
+                logger.info("Telegram document sent successfully")
+            else:
+                logger.warning(f"Telegram document failed with status code {response.status_code}")
+            return success
+    except Exception as e:
+        logger.error(f"Failed to send Telegram document: {e}")
         return False 

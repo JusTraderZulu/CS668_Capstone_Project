@@ -44,4 +44,7 @@ ipywidgets>=7.6.0  # For interactive notebooks
 ta>=0.10.2
 
 # Packaging helper (provides pkg_resources used for data paths)
-setuptools>=58.0.0 
+setuptools>=58.0.0
+
+# Added from the code block
+python-dotenv>=1.0.0 

@@ -36,7 +36,7 @@ pip install -r requirements.txt
 | Step | Command | Why you might run it |
 |------|---------|----------------------|
 | 0. Verify environment | `python dql_trading.py check-dependencies` | Confirms Python packages (numpy, torch, etc.) are installed. |
-| 1. Quick train & test | `python dql_trading.py train --data_file test_small.csv --experiment_name exp1 --episodes 50 --test` | Fast iteration: trains for *N* episodes and immediately evaluates on the hold-out set. Generates a PDF report with feature-importance. |
+| 1. Quick train & test | `python dql_trading.py train --data_file test_small.csv --experiment_name exp1 --episodes 50 --test` | Fast iteration: trains for *N* episodes, auto-generates a PDF report (enabled by default). |
 | 2. Hyper-parameter search | `python dql_trading.py tune --data_file test_small.csv --search_type random --n_iter 30` | Finds better agent parameters via random/grid search. Stores `optimal_parameters.json`. |
 | 3. Initial workflow | `python dql_trading.py initial-workflow --data_file test_small.csv --experiment_name exp2 --episodes 100 --n_iter 30` | Runs tuning *then* trains a model with the best parameters. Good starting point for a new dataset. |
 | 4. Full workflow | `python dql_trading.py full-workflow --data_file test_small.csv --experiment_name exp3` | Hyper-parameter tuning → training → evaluation → PDF report, fully automated. |
@@ -44,6 +44,7 @@ pip install -r requirements.txt
 | 6. Generate / rebuild report | `python dql_trading.py report --experiment exp1` | Re-creates `results/exp1/exp1_report.pdf` without retraining. Handy after manually modifying figures. |
 | 7. Evaluate on fresh data | `python dql_trading.py evaluate --experiment exp1 --data_file new_data.csv` | Tests a saved model on unseen market data. |
 | 8. Compare strategies | `python dql_trading.py compare --experiments exp1 exp2 exp3 --data_file test_small.csv` | Produces side-by-side performance charts & metrics. |
+| 9. Cloud run with Telegram ping | `python dql_trading.py train … --notify` | Sends a summary + PDF to Telegram when finished. |
 
 Each command writes all artifacts to `results/<experiment_name>/`, including:
 
@@ -136,4 +137,37 @@ If you use this framework in your research, please cite:
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. 
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Telegram Notifications
+
+You can receive a text summary **and the PDF report** directly in Telegram.
+
+1. Create a bot with **@BotFather** → note the token.
+2. Obtain your chat-ID via **@userinfobot**.
+3. Export the credentials in your shell:
+
+```bash
+export TELEGRAM_BOT_TOKEN="<token>"
+export TELEGRAM_CHAT_ID="<chat_id>"
+```
+
+4. Add `--notify` to any `train` command.  Example:
+
+```bash
+python dql_trading.py train \
+    --data_file eurusd_all.csv \
+    --experiment_name mem_cloud \
+    --episodes 300 \
+    --agent_type memory \
+    --test \
+    --notify
+```
+
+When training ends you'll receive a message like:
+
+```
+✅ Training finished for mem_cloud
+Return: 12.34%  |  Sharpe: 0.95  |  Drawdown: 4.20%
+```
+…followed by the attached `mem_cloud_report.pdf`. 

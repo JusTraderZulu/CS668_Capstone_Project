@@ -11,6 +11,7 @@ import sys
 
 from dql_trading.agents.dql_agent import DQLAgent
 from dql_trading.agents.custom_agent import CustomAgent
+from dql_trading.agents.memory_agent import MemoryAgent
 
 def create_agent(agent_type, state_dim, action_dim, **params):
     """
@@ -55,5 +56,9 @@ def create_agent(agent_type, state_dim, action_dim, **params):
             target_update_freq=target_update_freq,
             **agent_params
         )
+    elif agent_type.lower() == 'memory':
+        # Remove unsupported param for MemoryAgent
+        agent_params.pop('target_update_freq', None)
+        return MemoryAgent(state_dim=state_dim, action_dim=action_dim, **agent_params)
     else:
-        raise ValueError(f"Unsupported agent type: {agent_type}. Use 'dql' or 'custom'.") 
+        raise ValueError(f"Unsupported agent type: {agent_type}. Use 'dql', 'custom', or 'memory'.") 

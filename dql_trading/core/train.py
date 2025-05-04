@@ -14,7 +14,7 @@ import argparse, mlflow, json
 from datetime import datetime
 
 # Import our modules
-from dql_trading.utils.data_processing import load_data, split_data, add_indicators, TrainingLogger, visualize_trade_actions, set_seed
+from dql_trading.utils.data_processing import load_data, split_data, add_indicators, TrainingLogger, visualize_trade_actions, set_seed, split_data_three
 from dql_trading.envs.trading_env import ForexTradingEnv, TraderConfig
 from dql_trading.agents.dql_agent import DQLAgent
 from dql_trading.utils.metrics import calculate_trading_metrics, create_performance_dashboard, create_training_plots
@@ -24,6 +24,9 @@ from dql_trading.baseline_strategies.baseline_agents import MovingAverageCrossov
 from dql_trading.reporting import TradingReport
 # Import feature tracking wrapper
 from dql_trading.envs.feature_tracking import FeatureTrackingWrapper, create_feature_importance_visualization
+from dql_trading.utils.ai_helpers import generate_recommendations
+# Telegram notifications helper
+from dql_trading.utils.notifications import send_telegram_message, send_telegram_document
 
 def train_agent(args, experiment_name: str):
     """
@@ -63,12 +66,20 @@ def train_agent(args, experiment_name: str):
         logger.logger.info(f"Adding technical indicators: {args.indicators}")
         df = add_indicators(df)
     
-    # Split data into train and test sets
-    train_df, test_df = split_data(df, train_end=args.train_end, trade_start=args.trade_start, trade_end=args.trade_end)
+    # Three-way chronological split (train / validation / test)
+    train_df, val_df, test_df = split_data_three(
+        df,
+        train_frac=getattr(args, "train_frac", 0.65),
+        val_frac=getattr(args, "val_frac", 0.20),
+    )
+
+    # For the training phase we use only *train_df*.
+    # The validation set remains unused here (it is consumed by the tuner).
     
     # Log data info
-    logger.logger.info(f"Training data: {len(train_df)} rows from {train_df.index.min()} to {train_df.index.max()}")
-    logger.logger.info(f"Testing data: {len(test_df)} rows from {test_df.index.min()} to {test_df.index.max()}")
+    logger.logger.info(
+        f"Training data: {len(train_df)} rows | Validation: {len(val_df)} | Test: {len(test_df)}"
+    )
     
     # Create trader config
     trader_config = TraderConfig(
@@ -88,13 +99,20 @@ def train_agent(args, experiment_name: str):
     for key, value in trader_config.as_dict().items():
         logger.logger.info(f"  {key}: {value}")
     
-    # Environment settings
+    # ------------------------------------------------------------------
+    # Environment settings.  We only override *tech_indicator_list* if the
+    # user explicitly provides --indicators.  Otherwise we keep the rich
+    # default list defined in ForexTradingEnv.
+    # ------------------------------------------------------------------
+
     env_params = {
         "initial_amount": args.initial_amount,
         "transaction_cost_pct": args.transaction_cost,
         "reward_scaling": args.reward_scaling,
-        "tech_indicator_list": ["close"] + args.indicators if args.indicators else ["close"]
     }
+
+    if args.indicators:  # user override
+        env_params["tech_indicator_list"] = ["close"] + args.indicators
     
     # Create the training environment
     train_env = ForexTradingEnv(
@@ -184,7 +202,7 @@ def train_agent(args, experiment_name: str):
             steps += 1
             
             # Log step details at debug level
-            action_names = ['SELL', 'HOLD', 'BUY']
+            action_names = ['SELL', 'HOLD', 'BUY', 'CLOSE']
             logger.logger.debug(
                 f"  Step {steps}: Action={action_names[action]}, "
                 f"Reward={reward:.4f}, Done={done}"
@@ -763,16 +781,16 @@ def train_agent(args, experiment_name: str):
         )
         
         # Add conclusion
+        recommendations = generate_recommendations(test_metrics_data or metrics)
+
         report.add_conclusion(
             key_findings=[
-                f"The DQL agent achieved a total return of {metrics.get('total_return_pct', 0):.2f}% on training data.",
-                f"The agent performed with a Sharpe ratio of {metrics.get('sharpe_ratio', 0):.4f} during training.",
-                f"Maximum drawdown during training was {metrics.get('max_drawdown', 0) * 100:.2f}%."
+                f"The agent achieved a total return of {metrics.get('total_return_pct', 0):.2f}% on training data.",
+                f"Sharpe ratio during training was {metrics.get('sharpe_ratio', 0):.4f}.",
+                f"Maximum training drawdown was {metrics.get('max_drawdown', 0) * 100:.2f}%."
             ],
-            recommendations=[
-                "Consider running hyperparameter tuning to optimize agent performance.",
-                "Test the agent on different market conditions and timeframes.",
-                "Evaluate adding different technical indicators to the state representation."
+            recommendations=recommendations or [
+                "No specific recommendations generated. Review metrics manually."
             ]
         )
         
@@ -786,6 +804,26 @@ def train_agent(args, experiment_name: str):
     logger.logger.info("=" * 50)
     logger.logger.info(f"Training and evaluation completed: {logger.experiment_name}")
     logger.logger.info("=" * 50)
+    
+    # ------------------------------------------------------------------
+    # Optional Telegram notification summarising results
+    # ------------------------------------------------------------------
+    if hasattr(args, 'notify') and args.notify:
+        try:
+            summary = (
+                f"✅ Training finished for *{logger.experiment_name}*\n"
+                f"Return: {metrics.get('total_return_pct', 0):.2f}%  |  "
+                f"Sharpe: {metrics.get('sharpe_ratio', 0):.2f}  |  "
+                f"Drawdown: {metrics.get('max_drawdown', 0)*100:.2f}%"
+            )
+            send_telegram_message(summary)
+
+            # If a PDF report was generated, send it as document
+            report_path = os.path.join(results_dir, f"{logger.experiment_name}_report.pdf")
+            if os.path.exists(report_path):
+                send_telegram_document(report_path, caption=f"Report for *{logger.experiment_name}*")
+        except Exception as e:
+            logger.logger.warning(f"Telegram notification failed: {e}")
     
     # Create a summary dict for final metrics (training metrics)
     train_metrics = {"final": metrics}
@@ -853,6 +891,9 @@ def parse_args():
     
     # New target update frequency parameter
     parser.add_argument("--target_update_freq", type=int, default=10, help="Target update frequency")
+    
+    # Notifications
+    parser.add_argument("--notify", action="store_true", help="Send Telegram message when training completes (requires env vars TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID)")
     
     return parser.parse_args()
 

@@ -520,3 +520,61 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed) 
+
+# === NEW FUNCTION ===========================================================
+# Added for 65/20/15 (or any) chronological splits that need a dedicated
+# validation window in addition to a hold-out test window.
+
+def split_data_three(
+    df: pd.DataFrame,
+    train_frac: float = 0.65,
+    val_frac: float = 0.20,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Chronologically split *df* into train / validation / test.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Full, time-sorted OHLCV dataframe with a **date** column.
+    train_frac : float, default 0.65
+        Fraction of rows to allocate to the training set.
+    val_frac : float, default 0.20
+        Fraction of rows to allocate to the validation set.  The remainder
+        (1-train_frac-val_frac) becomes the test set.
+
+    Returns
+    -------
+    tuple(pd.DataFrame, pd.DataFrame, pd.DataFrame)
+        (train_df, val_df, test_df)
+    """
+
+    if not 0 < train_frac < 1:
+        raise ValueError("train_frac must be in (0, 1)")
+    if not 0 < val_frac < 1:
+        raise ValueError("val_frac must be in (0, 1)")
+    if train_frac + val_frac >= 1:
+        raise ValueError("train_frac + val_frac must be < 1")
+
+    # Ensure chronological order
+    df = df.sort_values("date").reset_index(drop=True)
+
+    n_total = len(df)
+    train_end_idx = int(n_total * train_frac)
+    val_end_idx = int(n_total * (train_frac + val_frac))
+
+    train_df = df.iloc[:train_end_idx].copy()
+    val_df = df.iloc[train_end_idx:val_end_idx].copy()
+    test_df = df.iloc[val_end_idx:].copy()
+
+    print(
+        f"[🔀] Split: train={len(train_df)} | val={len(val_df)} | test={len(test_df)} (total={n_total})"
+    )
+
+    # Reset indices for cleanliness
+    return (
+        train_df.reset_index(drop=True),
+        val_df.reset_index(drop=True),
+        test_df.reset_index(drop=True),
+    )
+
+# ========================================================================== 
