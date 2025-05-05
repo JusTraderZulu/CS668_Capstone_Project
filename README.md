@@ -170,4 +170,37 @@ When training ends you'll receive a message like:
 ✅ Training finished for mem_cloud
 Return: 12.34%  |  Sharpe: 0.95  |  Drawdown: 4.20%
 ```
-…followed by the attached `mem_cloud_report.pdf`. 
+…followed by the attached `mem_cloud_report.pdf`.
+
+## Telegram Notifications (NEW)
+
+The framework can send a Telegram message (and attach the PDF report) when a training or workflow command finishes.
+
+1. Create a Telegram bot via [BotFather](https://core.telegram.org/bots#botfather) and obtain its *token*.
+2. Send a message to your bot from your chat, then grab your *chat-id* (e.g. via https://api.telegram.org/bot<token>/getUpdates).
+3. Provide the two credentials **at runtime** as environment variables:
+
+```bash
+export TELEGRAM_BOT_TOKEN="<your-bot-token>"
+export TELEGRAM_CHAT_ID="<your-chat-id>"
+```
+
+⚠️  *Do **not** bake these secrets into the Docker image or commit them to Git.*  Passing them as env-vars keeps the image generic and your credentials safe.
+
+### Example
+
+```bash
+docker run --platform=linux/arm64 \
+  -e TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN \
+  -e TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID \
+  -v $HOME/dql_data:/app/data \
+  -v $HOME/dql_results:/app/results \
+  iad.ocir.io/<your-namespace>/dql-trading:latest \
+  initial-workflow \
+    --data_file eurusd_1y.csv \
+    --experiment_name mem_init \
+    --agent_type memory \
+    --episodes 50 --n_iter 25 --notify
+```
+
+Any command that supports `--notify` (`train`, `initial-workflow`, `tune`) will now deliver a completion message and attach the generated PDF report (if applicable). 

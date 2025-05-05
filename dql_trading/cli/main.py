@@ -66,13 +66,33 @@ def parse_args():
                               help="Disable report generation after training")
     
     # Initial workflow command
-    init_parser = subparsers.add_parser("initial-workflow", 
-                                         help="Run the initial workflow (training + tuning)")
+    init_parser = subparsers.add_parser(
+        "initial-workflow",
+        help="Run the initial workflow (training + tuning)"
+    )
     init_parser.add_argument("--data_file", type=str, required=True, help="Data file name")
     init_parser.add_argument("--experiment_name", type=str, required=True, help="Experiment name")
     init_parser.add_argument("--episodes", type=int, default=100, help="Number of episodes")
-    init_parser.add_argument("--n_iter", type=int, default=20, 
-                               help="Number of iterations for hyperparameter search")
+    init_parser.add_argument(
+        "--n_iter",
+        type=int,
+        default=20,
+        help="Number of iterations for hyperparameter search",
+    )
+    # NEW: allow agent type selection identical to train command so workflows can run memory/other agents
+    init_parser.add_argument(
+        "--agent_type",
+        type=str,
+        default="dql",
+        choices=["dql", "custom", "memory"],
+        help="Type of agent to create for the baseline run",
+    )
+    # NEW: optional Telegram notification flag so users can be alerted when workflow completes
+    init_parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Send Telegram notification when workflow completes (requires env vars)",
+    )
     
     # Full workflow command
     full_parser = subparsers.add_parser("full-workflow", 
@@ -87,14 +107,37 @@ def parse_args():
     # Tune command
     tune_parser = subparsers.add_parser("tune", help="Run hyperparameter tuning")
     tune_parser.add_argument("--data_file", type=str, required=True, help="Data file name")
-    tune_parser.add_argument("--search_type", type=str, default="random", 
-                             choices=["random", "grid"], help="Type of search")
-    tune_parser.add_argument("--n_iter", type=int, default=20, 
-                               help="Number of iterations for random search")
-    tune_parser.add_argument("--train_split", type=float, default=0.8,
-                             help="Train/test split ratio")
-    tune_parser.add_argument("--episodes", type=int, default=20,
-                             help="Number of episodes for each evaluation")
+    tune_parser.add_argument(
+        "--search_type",
+        type=str,
+        default="random",
+        choices=["random", "grid"],
+        help="Type of search",
+    )
+    tune_parser.add_argument(
+        "--n_iter",
+        type=int,
+        default=20,
+        help="Number of iterations for random search",
+    )
+    tune_parser.add_argument(
+        "--train_split",
+        type=float,
+        default=0.8,
+        help="Train/test split ratio",
+    )
+    tune_parser.add_argument(
+        "--episodes",
+        type=int,
+        default=20,
+        help="Number of episodes for each evaluation",
+    )
+    # Optional notification flag
+    tune_parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Send Telegram notification when tuning completes (requires env vars)",
+    )
     
     # Report command
     report_parser = subparsers.add_parser("report", help="Generate a report for an experiment")
@@ -295,7 +338,9 @@ def main():
                 data_file=args.data_file,
                 experiment_name=args.experiment_name,
                 episodes=args.episodes,
-                n_iter=args.n_iter
+                n_iter=args.n_iter,
+                agent_type=getattr(args, "agent_type", "dql"),
+                notify=getattr(args, "notify", False),
             )
             
         elif args.command == "full-workflow":
@@ -314,7 +359,8 @@ def main():
                 search_type=args.search_type,
                 n_iter=args.n_iter,
                 train_split=args.train_split,
-                episodes=args.episodes
+                episodes=args.episodes,
+                notify=getattr(args, "notify", False),
             )
             
         elif args.command == "report":

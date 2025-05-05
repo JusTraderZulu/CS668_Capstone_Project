@@ -253,7 +253,7 @@ def run_workflow(args):
     
     return True
 
-def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, **kwargs):
+def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, agent_type="dql", notify=False, **kwargs):
     """
     Main function that can be imported and called from other modules
     
@@ -267,6 +267,10 @@ def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, **kwargs
         Number of episodes for training
     n_iter : int
         Number of iterations for hyperparameter search
+    agent_type : str
+        Type of agent to create
+    notify : bool
+        Whether to send a notification via Telegram
     **kwargs : dict
         Additional arguments to pass to the workflow
         
@@ -275,7 +279,7 @@ def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, **kwargs
     bool
         True if the workflow completed successfully, False otherwise
     """
-    # Create args similar to what would be parsed from command line
+    # Parse into Args object
     class Args:
         pass
     
@@ -293,12 +297,27 @@ def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, **kwargs
     args.learning_rate = kwargs.get('learning_rate', 0.0001)
     args.gamma = kwargs.get('gamma', 0.99)
     args.epsilon = kwargs.get('epsilon', 1.0)
-    args.agent_type = kwargs.get('agent_type', 'dql')
+    args.agent_type = agent_type
     args.target_update_freq = kwargs.get('target_update_freq', 10)
     
-    return run_workflow(args)
+    workflow_success = run_workflow(args)
+
+    # Optional Telegram notification
+    if notify:
+        try:
+            from dql_trading.utils.notifications import send_telegram_message, send_telegram_document
+            msg = f"Initial workflow *{experiment_name}* {'succeeded' if workflow_success else 'failed'}"
+            send_telegram_message(msg)
+            # If report exists attach it
+            report_path = os.path.join(args.results_dir, args.experiment_name, "report.pdf")
+            if os.path.exists(report_path):
+                send_telegram_document(report_path, caption=f"Report for *{experiment_name}*")
+        except Exception as e:
+            logger.warning(f"Telegram notification failed: {e}")
+
+    return workflow_success
 
 if __name__ == "__main__":
     args = parse_args()
-    success = run_workflow(args)
+    success = main(args.data_file, args.experiment_name, args.episodes, args.n_iter, args.agent_type, False, **vars(args))
     sys.exit(0 if success else 1) 

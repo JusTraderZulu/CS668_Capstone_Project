@@ -232,6 +232,17 @@ def run_tuning(args):
     for k, v in final_params['env_params'].items():
         print(f"  {k}: {v}")
     
+    # Optional Telegram notification
+    if args.notify:
+        try:
+            from dql_trading.utils.notifications import send_telegram_message, send_telegram_document
+            caption = f"Hyperparameter tuning completed. Best params saved to {os.path.join(args.results_dir, 'optimal_parameters.json')}"
+            send_telegram_message(caption)
+            # send results CSV
+            send_telegram_document(results_path, caption="Tuning results CSV")
+        except Exception as e:
+            print(f"Warning: Telegram notification failed: {e}")
+    
     return final_params
 
 def parse_args():
@@ -255,6 +266,7 @@ def parse_args():
     parser.add_argument("--n_jobs", type=int, default=1, help="Number of parallel jobs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--top_n", type=int, default=5, help="Number of top models to highlight")
+    parser.add_argument("--notify", action="store_true", help="Send Telegram notification when completed")
     
     # Output parameters
     parser.add_argument("--results_dir", type=str, default="results/hyperparameter_tuning",
@@ -262,7 +274,7 @@ def parse_args():
     
     return parser.parse_args()
 
-def main(data_file=None, search_type="random", n_iter=20, **kwargs):
+def main(data_file=None, search_type="random", n_iter=20, notify=False, **kwargs):
     """
     Main function that can be imported and called from other modules
     
@@ -274,6 +286,8 @@ def main(data_file=None, search_type="random", n_iter=20, **kwargs):
         Type of search to perform ("random" or "grid")
     n_iter : int
         Number of iterations for random search
+    notify : bool
+        Send Telegram notification when completed
     **kwargs : dict
         Additional arguments to pass to the hyperparameter tuning
         
@@ -299,6 +313,7 @@ def main(data_file=None, search_type="random", n_iter=20, **kwargs):
     args.n_jobs = kwargs.get('n_jobs', 1)
     args.seed = kwargs.get('seed', 42)
     args.top_n = kwargs.get('top_n', 5)
+    args.notify = notify
     
     # Run hyperparameter tuning
     return run_tuning(args)
