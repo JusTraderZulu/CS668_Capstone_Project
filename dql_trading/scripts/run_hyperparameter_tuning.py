@@ -232,16 +232,22 @@ def run_tuning(args):
     for k, v in final_params['env_params'].items():
         print(f"  {k}: {v}")
     
-    # Optional Telegram notification
-    if args.notify:
+    # ------------------------------------------------------------------
+    # Telegram notification with summary
+    # ------------------------------------------------------------------
+    if getattr(args, "notify", False):
         try:
             from dql_trading.utils.notifications import send_telegram_message, send_telegram_document
-            caption = f"Hyperparameter tuning completed. Best params saved to {os.path.join(args.results_dir, 'optimal_parameters.json')}"
-            send_telegram_message(caption)
-            # send results CSV
-            send_telegram_document(results_path, caption="Tuning results CSV")
+
+            send_telegram_message(
+                f"✅ Hyperparameter tuning finished for *{args.data_file}*\nTop metric: {args.metric}"
+            )
+
+            # send the CSV if path determined and file exists
+            if results_path and os.path.exists(results_path):
+                send_telegram_document(results_path, caption="Tuning results CSV")
         except Exception as e:
-            print(f"Warning: Telegram notification failed: {e}")
+            print(f"Telegram notification failed: {e}")
     
     return final_params
 

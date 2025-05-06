@@ -13,6 +13,7 @@ Usage:
 """
 import os
 import sys
+import shutil  # NEW: for copying files
 
 # Add the project root to the Python path
 # Removed sys.path modification, '..')))
@@ -62,7 +63,7 @@ def parse_args():
     
     # Agent parameters
     parser.add_argument("--agent_type", type=str, default="dql",
-                        choices=["dql", "custom"],
+                        choices=["dql", "custom", "memory"],
                         help="Type of agent to create")
     parser.add_argument("--target_update_freq", type=int, default=10,
                         help="Target network update frequency (for custom agent)")
@@ -72,6 +73,13 @@ def parse_args():
                         help="Directory to save results")
     parser.add_argument("--tuning_dir", type=str, default="results/hyperparameter_tuning", 
                         help="Directory for hyperparameter tuning results")
+    
+    # Notification flag (optional)
+    parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Send Telegram notification with summary & PDF report at the end (requires env vars)",
+    )
     
     return parser.parse_args()
 
@@ -84,7 +92,7 @@ def run_hyperparameter_tuning(args):
     
     # Build command for hyperparameter tuning
     cmd = [
-        "python", "scripts/run_hyperparameter_tuning.py",
+        sys.executable, "-m", "dql_trading.scripts.run_hyperparameter_tuning",
         "--data_file", args.data_file,
         "--search_type", "random",
         "--n_iter", str(args.n_iter),
@@ -99,6 +107,10 @@ def run_hyperparameter_tuning(args):
     if args.end_date:
         cmd.extend(["--end_date", args.end_date])
     
+    # Add notify flag if provided
+    if getattr(args, "notify", False):
+        cmd.append("--notify")
+    
     # Run the hyperparameter tuning process
     logger.info(f"Running command: {' '.join(cmd)}")
     try:
@@ -111,6 +123,15 @@ def run_hyperparameter_tuning(args):
         if not os.path.exists(optimal_params_path):
             logger.error(f"Optimal parameters file not found at {optimal_params_path}")
             return False
+        
+        # NEW: copy optimal parameters to experiment directory so reports can find them
+        exp_dir = os.path.join(args.results_dir, args.experiment_name)
+        try:
+            os.makedirs(exp_dir, exist_ok=True)
+            shutil.copy2(optimal_params_path, os.path.join(exp_dir, "hyperparameters.json"))
+            logger.info("Copied optimal parameters to experiment directory")
+        except Exception as copy_err:
+            logger.warning(f"Failed to copy optimal parameters to experiment dir: {copy_err}")
         
         return True
     except subprocess.CalledProcessError as e:
@@ -132,7 +153,7 @@ def train_model_with_optimal_params(args):
     
     # Build command for training
     cmd = [
-        "python", "core/train.py",
+        "python", "dql_trading/core/train.py",
         "--data_file", args.data_file,
         "--load_optimal_params", optimal_params_path,
         "--experiment_name", args.experiment_name,
@@ -142,6 +163,10 @@ def train_model_with_optimal_params(args):
         "--test",  # Include testing phase
         "--progress_bar"  # Show progress bar
     ]
+    
+    # Pass on notify flag so train.py can send its own summary & PDF (if asked)
+    if getattr(args, "notify", False):
+        cmd.append("--notify")
     
     # Add optional parameters if provided
     if args.start_date:
@@ -167,7 +192,7 @@ def generate_report(args):
     
     # Build command for report generation
     cmd = [
-        "python", "scripts/generate_report.py",
+        "python", "dql_trading/scripts/generate_report.py",
         "--experiment", args.experiment_name,
         "--results_dir", args.results_dir
     ]
@@ -239,6 +264,30 @@ def run_workflow(args):
     logger.info(f"Full workflow completed successfully in {int(hours)}h {int(minutes)}m {int(seconds)}s")
     logger.info(f"Results stored in {os.path.join(args.results_dir, args.experiment_name)}")
     
+    # --------------------------------------------------------------
+    # Optional Telegram notification with report
+    # --------------------------------------------------------------
+    if getattr(args, "notify", False):
+        try:
+            from dql_trading.utils.notifications import (
+                send_telegram_message,
+                send_telegram_document,
+            )
+
+            summary_msg = (
+                f"✅ Full workflow finished for *{args.experiment_name}*\n"
+                f"Runtime: {int(hours)}h {int(minutes)}m {int(seconds)}s"
+            )
+            send_telegram_message(summary_msg)
+
+            pdf_path = os.path.join(
+                args.results_dir, args.experiment_name, f"{args.experiment_name}_report.pdf"
+            )
+            if os.path.exists(pdf_path):
+                send_telegram_document(pdf_path, caption=f"Report for *{args.experiment_name}*")
+        except Exception as notify_err:
+            logger.warning(f"Telegram notification failed: {notify_err}")
+    
     return True
 
 if __name__ == "__main__":
@@ -259,7 +308,7 @@ def main(data_file=None, experiment_name=None, skip_tuning=False, agent_type="dq
     skip_tuning : bool
         Whether to skip the hyperparameter tuning step
     agent_type : str
-        Type of agent to create ("dql" or "custom")
+        Type of agent to create ("dql", "custom", or "memory")
     **kwargs : dict
         Additional arguments to pass to the workflow
     
@@ -283,7 +332,12 @@ def main(data_file=None, experiment_name=None, skip_tuning=False, agent_type="dq
     args.optimization_metric = kwargs.get('optimization_metric', 'sharpe_ratio')
     args.target_update_freq = kwargs.get('target_update_freq', 10)
     args.results_dir = kwargs.get('results_dir', 'results')
-    args.tuning_dir = kwargs.get('tuning_dir', 'results/hyperparameter_tuning')
+    args.notify = kwargs.get('notify', False)
+    # Place hyperparameter tuning results inside the experiment folder by default so
+    # each experiment keeps its own set of optimal parameters and tuning history.
+    # This prevents collisions if multiple experiments are run back-to-back.
+    default_tuning_dir = os.path.join(args.results_dir, args.experiment_name, 'hyperparameter_tuning')
+    args.tuning_dir = kwargs.get('tuning_dir', default_tuning_dir)
     args.start_date = kwargs.get('start_date', None)
     args.end_date = kwargs.get('end_date', None)
     

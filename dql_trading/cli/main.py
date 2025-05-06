@@ -103,6 +103,17 @@ def parse_args():
                               help="Skip hyperparameter tuning")
     full_parser.add_argument("--agent_type", type=str, default="dql", choices=["dql", "custom", "memory"], 
                                help="Type of agent to create")
+    full_parser.add_argument("--episodes", type=int, default=100, help="Number of episodes for full workflow")
+    full_parser.add_argument("--tuning_episodes", type=int, default=20, help="Number of episodes for tuning")
+    full_parser.add_argument("--n_iter", type=int, default=20, help="Number of iterations for hyperparameter search")
+    full_parser.add_argument("--optimization_metric", type=str, default="sharpe_ratio", help="Optimization metric")
+    full_parser.add_argument("--target_update_freq", type=int, default=10, help="Target update frequency")
+    # Optional Telegram notification flag for full workflow
+    full_parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Send Telegram notification when workflow completes (requires env vars)",
+    )
     
     # Tune command
     tune_parser = subparsers.add_parser("tune", help="Run hyperparameter tuning")
@@ -131,6 +142,14 @@ def parse_args():
         type=int,
         default=20,
         help="Number of episodes for each evaluation",
+    )
+    # NEW: allow tuning different agent types
+    tune_parser.add_argument(
+        "--agent_type",
+        type=str,
+        default="dql",
+        choices=["dql", "custom", "memory"],
+        help="Type of agent to tune",
     )
     # Optional notification flag
     tune_parser.add_argument(
@@ -349,7 +368,13 @@ def main():
                 data_file=args.data_file,
                 experiment_name=args.experiment_name,
                 skip_tuning=args.skip_tuning,
-                agent_type=args.agent_type
+                agent_type=args.agent_type,
+                episodes=getattr(args, "episodes", 100),
+                tuning_episodes=getattr(args, "tuning_episodes", 20),
+                n_iter=getattr(args, "n_iter", 20),
+                optimization_metric=getattr(args, "optimization_metric", "sharpe_ratio"),
+                target_update_freq=getattr(args, "target_update_freq", 10),
+                notify=getattr(args, "notify", False),
             )
             
         elif args.command == "tune":
@@ -360,6 +385,7 @@ def main():
                 n_iter=args.n_iter,
                 train_split=args.train_split,
                 episodes=args.episodes,
+                agent_type=getattr(args, "agent_type", "dql"),
                 notify=getattr(args, "notify", False),
             )
             

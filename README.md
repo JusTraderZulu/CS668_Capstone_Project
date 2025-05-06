@@ -44,7 +44,7 @@ pip install -r requirements.txt
 | 6. Generate / rebuild report | `python dql_trading.py report --experiment exp1` | Re-creates `results/exp1/exp1_report.pdf` without retraining. Handy after manually modifying figures. |
 | 7. Evaluate on fresh data | `python dql_trading.py evaluate --experiment exp1 --data_file new_data.csv` | Tests a saved model on unseen market data. |
 | 8. Compare strategies | `python dql_trading.py compare --experiments exp1 exp2 exp3 --data_file test_small.csv` | Produces side-by-side performance charts & metrics. |
-| 9. Cloud run with Telegram ping | `python dql_trading.py train … --notify` | Sends a summary + PDF to Telegram when finished. |
+| 9. Notify via Telegram | `python dql_trading.py [train,tune,initial-workflow,full-workflow] ... --notify` | Sends a summary + PDF/CSV to Telegram when finished. |
 
 Each command writes all artifacts to `results/<experiment_name>/`, including:
 
@@ -174,20 +174,35 @@ Return: 12.34%  |  Sharpe: 0.95  |  Drawdown: 4.20%
 
 ## Telegram Notifications (NEW)
 
-The framework can send a Telegram message (and attach the PDF report) when a training or workflow command finishes.
+The framework can send Telegram messages (with PDF reports and CSV results) when a command finishes.
 
-1. Create a Telegram bot via [BotFather](https://core.telegram.org/bots#botfather) and obtain its *token*.
-2. Send a message to your bot from your chat, then grab your *chat-id* (e.g. via https://api.telegram.org/bot<token>/getUpdates).
-3. Provide the two credentials **at runtime** as environment variables:
+1. Create a bot with **@BotFather** → note the token.
+2. Obtain your chat-ID via **@userinfobot** or the API.
+3. Export the credentials in your shell:
 
 ```bash
-export TELEGRAM_BOT_TOKEN="<your-bot-token>"
-export TELEGRAM_CHAT_ID="<your-chat-id>"
+export TELEGRAM_BOT_TOKEN="<token>"
+export TELEGRAM_CHAT_ID="<chat_id>"
 ```
 
-⚠️  *Do **not** bake these secrets into the Docker image or commit them to Git.*  Passing them as env-vars keeps the image generic and your credentials safe.
+4. Add `--notify` to any supported command:
+   * `train` - sends message + PDF when training finishes
+   * `tune` - sends summary + optimal parameters CSV
+   * `initial-workflow` - notifications from both training and tuning, plus final PDF
+   * `full-workflow` - notifications at each stage with final PDF report
 
-### Example
+**Example:**
+
+```bash
+python dql_trading.py full-workflow \
+    --data_file eurusd_all.csv \
+    --experiment_name workflow_demo \
+    --agent_type memory \
+    --episodes 100 \
+    --notify
+```
+
+When training ends you'll receive a message and the PDF report. For cloud/VM usage, you can pass environment variables when launching Docker:
 
 ```bash
 docker run --platform=linux/arm64 \
@@ -196,11 +211,13 @@ docker run --platform=linux/arm64 \
   -v $HOME/dql_data:/app/data \
   -v $HOME/dql_results:/app/results \
   iad.ocir.io/<your-namespace>/dql-trading:latest \
-  initial-workflow \
-    --data_file eurusd_1y.csv \
-    --experiment_name mem_init \
+  full-workflow \
+    --data_file eurusd_all.csv \
+    --experiment_name mem_run \
     --agent_type memory \
-    --episodes 50 --n_iter 25 --notify
+    --notify
 ```
 
-Any command that supports `--notify` (`train`, `initial-workflow`, `tune`) will now deliver a completion message and attach the generated PDF report (if applicable). 
+⚠️ *Do **not** bake these secrets into the Docker image or commit them to Git.* Passing them as env-vars keeps the image generic and your credentials safe.
+
+> Note: `eurusd_all.csv` contains ~10 years of EURUSD history. You can focus on a sub-period with `--start_date YYYY-MM-DD` and `--end_date YYYY-MM-DD` arguments (available on every workflow command) instead of using a separate 1-year file. 

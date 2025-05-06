@@ -66,7 +66,7 @@ def parse_args():
     
     # Agent parameters
     parser.add_argument("--agent_type", type=str, default="dql",
-                        choices=["dql", "custom"],
+                        choices=["dql", "custom", "memory"],
                         help="Type of agent to create")
     parser.add_argument("--target_update_freq", type=int, default=10,
                         help="Target network update frequency (for custom agent)")
@@ -74,8 +74,15 @@ def parse_args():
     # Directory parameters
     parser.add_argument("--results_dir", type=str, default="results", 
                         help="Directory to save results")
-    parser.add_argument("--tuning_dir", type=str, default="results/hyperparameter_tuning", 
-                        help="Directory for hyperparameter tuning results")
+    parser.add_argument("--tuning_dir", type=str, default=None, 
+                        help="Directory for hyperparameter tuning results (default: results/<experiment_name>/hyperparameter_tuning)")
+    
+    # Notification flag
+    parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Send Telegram notification upon completion (requires env vars)",
+    )
     
     return parser.parse_args()
 
@@ -107,6 +114,10 @@ def train_initial_model(args):
     if args.end_date:
         cmd.extend(["--end_date", args.end_date])
     
+    # Add notification flag if set
+    if getattr(args, "notify", False):
+        cmd.append("--notify")
+    
     # Run the training process
     logger.info(f"Running command: {' '.join(cmd)}")
     try:
@@ -128,7 +139,7 @@ def run_hyperparameter_tuning(args):
     
     # Build command for hyperparameter tuning
     cmd = [
-        "python", "dql_trading/scripts/run_hyperparameter_tuning.py",
+        sys.executable, "-m", "dql_trading.scripts.run_hyperparameter_tuning",
         "--data_file", args.data_file,
         "--search_type", "random",
         "--n_iter", str(args.n_iter),
@@ -142,6 +153,10 @@ def run_hyperparameter_tuning(args):
         cmd.extend(["--start_date", args.start_date])
     if args.end_date:
         cmd.extend(["--end_date", args.end_date])
+    
+    # Add notification flag if set
+    if getattr(args, "notify", False):
+        cmd.append("--notify")
     
     # Run the hyperparameter tuning process
     logger.info(f"Running command: {' '.join(cmd)}")
@@ -189,6 +204,22 @@ def generate_basic_report(args):
             logger.info(f"Basic report generated at: {report_path}")
         else:
             logger.warning("Report was generated but couldn't determine the path")
+        
+        # Telegram
+        if getattr(args, "notify", False):
+            try:
+                from dql_trading.utils.notifications import send_telegram_message, send_telegram_document
+
+                summary = f"✅ Initial workflow finished for *{args.experiment_name}*"
+                send_telegram_message(summary)
+
+                pdf_path = os.path.join(
+                    args.results_dir, args.experiment_name, f"{args.experiment_name}_report.pdf"
+                )
+                if os.path.exists(pdf_path):
+                    send_telegram_document(pdf_path, caption=f"Initial report for *{args.experiment_name}*")
+            except Exception as e:
+                logger.warning(f"Telegram notification failed: {e}")
         
         return True
     except subprocess.CalledProcessError as e:
@@ -291,7 +322,8 @@ def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, agent_ty
     args.start_date = kwargs.get('start_date', None)
     args.end_date = kwargs.get('end_date', None)
     args.results_dir = kwargs.get('results_dir', 'results')
-    args.tuning_dir = kwargs.get('tuning_dir', 'results/hyperparameter_tuning')
+    default_tuning_dir = os.path.join(args.results_dir, args.experiment_name, 'hyperparameter_tuning')
+    args.tuning_dir = kwargs.get('tuning_dir', default_tuning_dir)
     args.tuning_episodes = kwargs.get('tuning_episodes', 20)
     args.optimization_metric = kwargs.get('optimization_metric', 'sharpe_ratio')
     args.learning_rate = kwargs.get('learning_rate', 0.0001)
@@ -299,6 +331,7 @@ def main(data_file=None, experiment_name=None, episodes=100, n_iter=20, agent_ty
     args.epsilon = kwargs.get('epsilon', 1.0)
     args.agent_type = agent_type
     args.target_update_freq = kwargs.get('target_update_freq', 10)
+    args.notify = notify
     
     workflow_success = run_workflow(args)
 

@@ -58,7 +58,22 @@ def train_agent(args, experiment_name: str):
     
     # Load and prepare data
     logger.logger.info("Loading and preparing data...")
-    data_path = pkg_resources.resource_filename("dql_trading", f"data/{args.data_file}")
+    # ------------------------------------------------------------
+    # Resolve data file path in a more robust way:
+    # 1.  Absolute path provided  -> use as-is
+    # 2.  Relative path that already exists where we run from
+    # 3.  Fall back to packaged CSV under dql_trading/data/
+    # ------------------------------------------------------------
+    if os.path.isabs(args.data_file):
+        data_path = args.data_file
+    elif os.path.exists(args.data_file):
+        data_path = args.data_file
+    else:
+        # Package data directory (sibling to this core/ folder)
+        package_data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        data_path = os.path.join(package_data_dir, args.data_file)
+    logger.logger.debug(f"Resolved data path → {data_path}")
+    
     df = load_data(data_path, start_date=args.start_date, end_date=args.end_date)
     
     # Add technical indicators if requested
