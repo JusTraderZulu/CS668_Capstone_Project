@@ -1,7 +1,7 @@
 # Core Scientific Dependencies
 # =======================
-numpy>=1.20.0
-pandas>=1.3.0
+numpy>=1.20.0,<1.25.0  # Cap for Python 3.8 compatibility 
+pandas>=1.3.0,<2.0.0   # Cap for Python 3.8 compatibility
 matplotlib>=3.4.0
 scikit-learn>=1.0.0
 seaborn>=0.11.0
@@ -12,12 +12,13 @@ torch>=1.9.0
 
 # Reinforcement Learning
 # =====================
-gym>=0.21.0
-tqdm>=4.62.0  # Progress bars
+gymnasium>=0.28.0  # Modern replacement for gym
+gym>=0.21.0       # Keep for backward compatibility 
+tqdm>=4.62.0      # Progress bars
 
 # Experiment Tracking
 # ==================
-mlflow>=2.11.1
+mlflow>=1.30.0,<2.0.0  # Lower version for Python 3.8 compatibility
 
 # Data Processing & Parallel Computing
 # ==================================
@@ -28,17 +29,18 @@ joblib>=1.1.0
 plotly>=5.3.0
 reportlab>=3.6.0
 pillow>=9.0.0
-fpdf2>=2.7.3  # modern maintained fork providing `from fpdf import FPDF`
+fpdf>=1.7.2       # Original FPDF package
+fpdf2>=2.4.0      # Modern maintained fork
 
 # Trading Specific
 # ===============
-vectorbt>=0.25.5  # Trading backtesting and analysis
+vectorbt>=0.25.0  # Trading backtesting and analysis
 
 # Development & Testing
 # ===================
 pytest>=6.0.0
-jupyter>=1.0.0  # For notebook development
-ipywidgets>=7.6.0  # For interactive notebooks
+jupyter>=1.0.0    # For notebook development
+ipywidgets>=7.6.0 # For interactive notebooks
 
 # Technical Indicators
 ta>=0.10.2
@@ -46,5 +48,11 @@ ta>=0.10.2
 # Packaging helper (provides pkg_resources used for data paths)
 setuptools>=58.0.0
 
-# Added from the code block
-python-dotenv>=1.0.0 
+# Telegram Notifications
+# ====================
+requests>=2.25.0    # Required for Telegram API
+python-dotenv>=0.19.0  # For loading environment variables
+
+# Type hints for Python 3.8
+# =======================
+typing-extensions>=4.0.0 
