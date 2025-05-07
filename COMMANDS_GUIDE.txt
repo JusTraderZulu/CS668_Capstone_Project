@@ -1,0 +1,129 @@
+Quick-Start Command-Line Guide for DQL-Trading Workflows
+========================================================
+
+This cheat-sheet explains every shell command you need to run, monitor and troubleshoot the project.
+
+Project root assumed: `/path/to/DQL_agent`  (already cd'd).
+
+------------------------------------------------------------
+0. Prerequisites
+------------------------------------------------------------
+• Homebrew / system Python 3.x
+• Virtual-env in `.venv`
+• Dependencies installed:
+  ```bash
+  python3 -m pip install -r requirements.txt
+  ```
+
+------------------------------------------------------------
+1. Activate the virtual environment
+------------------------------------------------------------
+```bash
+source .venv/bin/activate            # prompt shows (.venv)
+```
+Alias for convenience (add to `~/.zshrc`):
+```zsh
+alias dqlenv='cd ~/…/DQL_agent && source .venv/bin/activate'
+```
+
+------------------------------------------------------------
+2. Launch a full workflow
+------------------------------------------------------------
+```bash
+python dql_trading.py full-workflow \
+       --data_file eurusd_3m.csv \
+       --experiment_name my_exp \
+       --agent_type memory \
+       --episodes 30 \
+       --tuning_episodes 5 \
+       --n_iter 5
+```
+For unbuffered, real-time output prepend:
+```bash
+PYTHONUNBUFFERED=1 python …
+```
+
+------------------------------------------------------------
+3. Logs
+------------------------------------------------------------
+Global:            `workflow.log`
+Per-experiment:    `logs/<experiment>.log`
+
+Follow live:
+```bash
+tail -f workflow.log
+tail -f logs/my_exp.log
+```
+
+------------------------------------------------------------
+4. Hyper-parameter tuner progress
+------------------------------------------------------------
+Trial folders appear under:
+`results/<experiment>/hyperparameter_tuning/`
+
+Count them live:
+```bash
+watch -n 2 'ls -1 results/my_exp/hyperparameter_tuning | wc -l'
+```
+
+------------------------------------------------------------
+5. List running jobs
+------------------------------------------------------------
+```bash
+pgrep -fl dql_trading                     # all DQL processes
+pgrep -fl run_hyperparameter_tuning       # just tuner
+ps -p <PID1>,<PID2> -o pid,%cpu,%mem,etime,command  # stats
+```
+
+------------------------------------------------------------
+6. Stop jobs
+------------------------------------------------------------
+```bash
+kill <PID>         # graceful
+kill -9 <PID>      # force
+pgrep -fl dql_trading | awk '{print $1}' | xargs -r kill -9   # all
+```
+
+------------------------------------------------------------
+7. Edit & re-run workflow
+------------------------------------------------------------
+1. Edit code (e.g., `run_full_workflow.py`).
+2. Kill old PIDs.
+3. Re-launch command (section 2).
+
+------------------------------------------------------------
+8. Troubleshooting cheats
+------------------------------------------------------------
+| Symptom | Fix |
+|---------|-----|
+| Missing dependency: torch | `source .venv/bin/activate && pip install torch` |
+| No log output | ensure `PYTHONUNBUFFERED=1` and modified `run_full_workflow.py` streaming block |
+| Slow training | install Metal-accelerated PyTorch; reduce episode counts |
+
+------------------------------------------------------------
+9. MLflow UI (if enabled)
+------------------------------------------------------------
+```bash
+mlflow ui --backend-store-uri results/<experiment>/hyperparameter_tuning/mlruns --port 5001
+open http://localhost:5001
+```
+
+------------------------------------------------------------
+10. One-liner cheat sheet
+------------------------------------------------------------
+```bash
+# Activate env
+source .venv/bin/activate
+
+# Run workflow with live logs
+PYTHONUNBUFFERED=1 python dql_trading.py full-workflow \
+  --data_file eurusd_3m.csv \
+  --experiment_name my_exp \
+  --agent_type memory \
+  --episodes 30 --tuning_episodes 5 --n_iter 5 &
+
+tail -f logs/my_exp.log
+pgrep -fl dql_trading
+```
+
+Happy trading & coding! 

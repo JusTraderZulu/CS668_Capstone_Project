@@ -293,6 +293,21 @@ def train_agent(args, experiment_name: str):
     # Save training metrics
     metrics_df = logger.save_metrics()
     
+    # ------------------------------------------------------------------
+    # Ensure downstream reporting script can locate consolidated metrics
+    # ------------------------------------------------------------------
+    if metrics_df is not None and not metrics_df.empty:
+        try:
+            train_metrics_path = os.path.join(results_dir, "train_metrics.json")
+            json_data = metrics_df.iloc[-1].to_dict()
+            # convert numpy types to native
+            json_data = {k: (float(v) if isinstance(v, (np.floating, np.float_)) else int(v) if isinstance(v, (np.integer,)) else v) for k, v in json_data.items()}
+            with open(train_metrics_path, "w") as fp:
+                json.dump(json_data, fp, indent=4)
+            logger.logger.info(f"Saved consolidated training metrics to {train_metrics_path}")
+        except Exception as e:
+            logger.logger.warning(f"Could not write train_metrics.json: {e}")
+    
     # Create and save learning curves
     learning_df = pd.DataFrame(learning_metrics)
     learning_curves_path = os.path.join(results_dir, "learning_curves.png")
@@ -933,20 +948,21 @@ def main(**kwargs):
             optimal_params = json.load(f)
         
         # Update agent parameters
-        if 'agent_params' in optimal_params:
-            agent_params = optimal_params['agent_params']
-            for param, value in agent_params.items():
-                if hasattr(args, param):
-                    setattr(args, param, value)
-                    print(f"  Set {param} = {value}")
+        agent_params = optimal_params['agent_params']
+        for param, value in agent_params.items():
+            # Don't let optimal params override --episodes specified by user
+            if param == 'episodes':
+                continue
+            if hasattr(args, param):
+                setattr(args, param, value)
+                print(f"  Set {param} = {value}")
         
         # Update environment parameters
-        if 'env_params' in optimal_params:
-            env_params = optimal_params['env_params']
-            for param, value in env_params.items():
-                if hasattr(args, param):
-                    setattr(args, param, value)
-                    print(f"  Set {param} = {value}")
+        env_params = optimal_params['env_params']
+        for param, value in env_params.items():
+            if hasattr(args, param):
+                setattr(args, param, value)
+                print(f"  Set {param} = {value}")
         
         print("Optimal parameters loaded successfully.")
     

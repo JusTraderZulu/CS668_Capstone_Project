@@ -20,7 +20,7 @@ def create_agent(agent_type, state_dim, action_dim, **params):
     Parameters:
     -----------
     agent_type : str
-        Type of agent to create ('dql', 'custom')
+        Type of agent to create ('dql', 'custom', 'memory')
     state_dim : int
         Dimension of the state space
     action_dim : int
@@ -59,6 +59,15 @@ def create_agent(agent_type, state_dim, action_dim, **params):
     elif agent_type.lower() == 'memory':
         # Remove unsupported param for MemoryAgent
         agent_params.pop('target_update_freq', None)
-        return MemoryAgent(state_dim=state_dim, action_dim=action_dim, **agent_params)
+        # Trading incentive parameters with defaults
+        force_trade_prob = agent_params.pop('force_trade_prob', 0.15)
+        trade_reward_bonus = agent_params.pop('trade_reward_bonus', 0.05)
+        return MemoryAgent(
+            state_dim=state_dim, 
+            action_dim=action_dim,
+            force_trade_prob=force_trade_prob, 
+            trade_reward_bonus=trade_reward_bonus,
+            **agent_params
+        )
     else:
         raise ValueError(f"Unsupported agent type: {agent_type}. Use 'dql', 'custom', or 'memory'.") 

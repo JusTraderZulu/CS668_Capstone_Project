@@ -11,6 +11,7 @@ Usage:
 """
 import os
 import sys
+import time
 
 # Add the project root to the Python path
 # Removed sys.path modification, '..')))
@@ -54,6 +55,11 @@ def run_tuning(args):
     data_path = pkg_resources.resource_filename("dql_trading", f"data/{args.data_file}")
     df = load_data(data_path, start_date=args.start_date, end_date=args.end_date)
     
+    # Subsample for memory saving if fraction < 1
+    if 0 < args.tuning_fraction < 1.0:
+        df = df.sample(frac=args.tuning_fraction, random_state=args.seed).sort_index()
+        print(f"Subsampled data to {len(df)} rows (fraction={args.tuning_fraction}) for tuning")
+    
     # Add indicators
     print("Adding technical indicators...")
     df = add_indicators(df)
@@ -65,7 +71,8 @@ def run_tuning(args):
         train_test_split=args.train_split,
         results_dir=args.results_dir,
         n_jobs=args.n_jobs,
-        random_seed=args.seed
+        random_seed=args.seed,
+        agent_type=args.agent_type  # Pass agent_type to tuner
     )
     
     # Define parameter distributions for search
@@ -163,9 +170,25 @@ def run_tuning(args):
         
         # Sequential evaluation
         results = []
-        for params in param_list:
-            print(f"Evaluating parameters: {params}")
+        print(f"Starting hyperparameter evaluation with {len(param_list)} trials...")
+        for i, params in enumerate(param_list):
+            print(f"\n[Trial {i+1}/{len(param_list)}] Evaluating parameters: {params}")
+            trial_start = time.time()
+            
+            # Pass the verbose flag to _evaluate_params by adding it to params
+            if args.verbose:
+                params['verbose'] = True
+            
             result = tuner._evaluate_params(params)
+            trial_time = time.time() - trial_start
+            
+            # Extract key metrics for summary
+            sharpe = result.get('sharpe_ratio', 0) or 0
+            returns = result.get('total_return_pct', 0) or 0
+            trades = result.get('total_trades', 0) or 0
+            
+            print(f"[Trial {i+1}/{len(param_list)}] Completed in {trial_time:.1f}s - Results: Sharpe={sharpe:.4f}, Return={returns:.2f}%, Trades={trades}")
+            
             results.append(result)
         
         # Convert to DataFrame
@@ -181,6 +204,10 @@ def run_tuning(args):
     else:
         raise ValueError(f"Unknown search type: {args.search_type}")
     
+    # Ensure results_path is defined even if grid search branch is used
+    if 'results_path' not in locals():
+        results_path = None
+
     # Visualize results
     print("Visualizing results...")
     try:
@@ -189,7 +216,7 @@ def run_tuning(args):
         print(f"Warning: Visualization failed: {e}")
     
     # Get best parameters and save them
-    best_params = tuner.get_best_params(results_df, metric=args.metric)
+    best_params = tuner.get_best_params(results_df, metric=args.metric, min_trades=args.min_trades)
     
     # Clean up best parameters for saving
     clean_params = {k: v for k, v in best_params.items() if k != 'model_id'}
@@ -216,7 +243,8 @@ def run_tuning(args):
             'metric_optimized': args.metric,
             'date_tuned': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'data_file': args.data_file,
-            'train_split': args.train_split
+            'train_split': args.train_split,
+            'agent_type': args.agent_type  # Include agent type in the saved parameters
         }
     }
     
@@ -239,11 +267,27 @@ def run_tuning(args):
         try:
             from dql_trading.utils.notifications import send_telegram_message, send_telegram_document
 
-            send_telegram_message(
-                f"✅ Hyperparameter tuning finished for *{args.data_file}*\nTop metric: {args.metric}"
-            )
+            # Determine the best metric value directly from results_df because
+            # best_params intentionally excludes metric columns. Handle
+            # max_drawdown (lower is better) separately.
+            try:
+                if args.metric == "max_drawdown":
+                    best_val = results_df[args.metric].min()
+                else:
+                    best_val = results_df[args.metric].max()
+                # Format to 4 decimals if numeric
+                if isinstance(best_val, (int, float)):
+                    best_val = f"{best_val:.4f}"
+            except Exception:
+                best_val = "n/a"
 
-            # send the CSV if path determined and file exists
+            msg = (
+                f"✅ Hyperparameter tuning finished for *{args.data_file}*\n"
+                f"*Best {args.metric}:* `{best_val}`"
+            )
+            send_telegram_message(msg)
+
+            # Send results CSV if it exists
             if results_path and os.path.exists(results_path):
                 send_telegram_document(results_path, caption="Tuning results CSV")
         except Exception as e:
@@ -266,13 +310,20 @@ def parse_args():
                         help="Type of hyperparameter search to perform")
     parser.add_argument("--n_iter", type=int, default=20, help="Number of iterations for random search")
     parser.add_argument("--episodes", type=int, default=20, help="Number of episodes for each evaluation")
+    parser.add_argument("--tuning_fraction", type=float, default=1.0, help="Fraction of data to sample for tuning (0-1)")
     parser.add_argument("--metric", type=str, default="sharpe_ratio", 
                         choices=["sharpe_ratio", "total_return_pct", "sortino_ratio", "calmar_ratio"],
                         help="Metric to optimize")
+    parser.add_argument("--min_trades", type=int, default=1,
+                        help="Minimum number of trades a model must execute to be considered optimal")
     parser.add_argument("--n_jobs", type=int, default=1, help="Number of parallel jobs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--top_n", type=int, default=5, help="Number of top models to highlight")
     parser.add_argument("--notify", action="store_true", help="Send Telegram notification when completed")
+    parser.add_argument("--verbose", action="store_true", help="Show detailed progress within each trial")
+    
+    # Agent parameters
+    parser.add_argument("--agent_type", type=str, default="dql", help="Type of agent to use")
     
     # Output parameters
     parser.add_argument("--results_dir", type=str, default="results/hyperparameter_tuning",
@@ -280,7 +331,7 @@ def parse_args():
     
     return parser.parse_args()
 
-def main(data_file=None, search_type="random", n_iter=20, notify=False, **kwargs):
+def main(data_file=None, search_type="random", n_iter=20, notify=False, agent_type="dql", **kwargs):
     """
     Main function that can be imported and called from other modules
     
@@ -294,6 +345,8 @@ def main(data_file=None, search_type="random", n_iter=20, notify=False, **kwargs
         Number of iterations for random search
     notify : bool
         Send Telegram notification when completed
+    agent_type : str
+        Type of agent to use
     **kwargs : dict
         Additional arguments to pass to the hyperparameter tuning
         
@@ -320,6 +373,10 @@ def main(data_file=None, search_type="random", n_iter=20, notify=False, **kwargs
     args.seed = kwargs.get('seed', 42)
     args.top_n = kwargs.get('top_n', 5)
     args.notify = notify
+    args.verbose = kwargs.get('verbose', False)
+    args.tuning_fraction = kwargs.get('tuning_fraction', 1.0)
+    args.min_trades = kwargs.get('min_trades', 1)
+    args.agent_type = agent_type  # Pass agent_type from arguments
     
     # Run hyperparameter tuning
     return run_tuning(args)

@@ -12,9 +12,10 @@ from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 
 # Import our modules
-from dql_trading.utils.data_processing import load_data, split_data, add_indicators
+from dql_trading.utils.data_processing import load_data, split_data, add_indicators, split_data_three
 from dql_trading.envs.trading_env import ForexTradingEnv, TraderConfig
 from dql_trading.agents.dql_agent import DQLAgent
+from dql_trading.agents.agent_factory import create_agent  # Import agent factory
 from dql_trading.utils.metrics import calculate_trading_metrics, create_performance_dashboard
 from dql_trading.utils.visualization import (
     plot_hyperparameter_results, 
@@ -30,9 +31,11 @@ class HyperparameterTuner:
     def __init__(self, 
                  data,
                  train_test_split=0.8,
+                 val_frac: float = 0.1,
                  results_dir='results/hyperparameter_tuning',
                  n_jobs=None,
-                 random_seed=42):
+                 random_seed=42,
+                 agent_type='dql'):  # Add agent_type parameter
         """
         Initialize the hyperparameter tuner
         
@@ -42,25 +45,50 @@ class HyperparameterTuner:
             DataFrame containing OHLCV data
         train_test_split : float
             Ratio of data to use for training vs testing
+        val_frac : float
+            Ratio of data to use for validation
         results_dir : str
             Directory to save results
         n_jobs : int, optional
             Number of parallel jobs to run. If None, uses all available CPUs - 1
         random_seed : int
             Random seed for reproducibility
+        agent_type : str
+            Type of agent to use ('dql', 'memory', etc.)
         """
         self.data = data
         self.train_test_split = train_test_split
+        self.val_frac = val_frac
         self.results_dir = results_dir
         self.random_seed = random_seed
+        self.agent_type = agent_type  # Store agent type
+        
+        # ------------------------------------------------------------------
+        # Split fractions
+        # ------------------------------------------------------------------
+        if not 0 < train_test_split < 1:
+            raise ValueError("train_test_split must be between 0 and 1")
+        if not 0 <= val_frac < 1:
+            raise ValueError("val_frac must be between 0 and 1")
+        if train_test_split <= val_frac:
+            raise ValueError("train_test_split must be larger than val_frac")
+
+        self.train_frac = train_test_split - val_frac
+        self.val_frac = val_frac
         
         # Create results directory if it doesn't exist
         os.makedirs(results_dir, exist_ok=True)
         
-        # Split data into train and test sets
-        split_idx = int(len(data) * train_test_split)
-        self.train_data = data.iloc[:split_idx].copy()
-        self.test_data = data.iloc[split_idx:].copy()
+        # Three-way chronological split (train / val / test)
+        train_df, val_df, test_df = split_data_three(
+            data,
+            train_frac=self.train_frac,
+            val_frac=self.val_frac,
+        )
+
+        self.train_data = train_df.copy()
+        self.val_data = val_df.copy()
+        self.test_data = test_df.copy()
         
         # Set number of parallel jobs
         if n_jobs is None:
@@ -147,8 +175,9 @@ class HyperparameterTuner:
             **env_params
         )
         
-        # Create agent
-        agent = DQLAgent(
+        # Create agent using factory instead of direct instantiation
+        agent = create_agent(
+            agent_type=self.agent_type,
             state_dim=env.observation_space.shape[0],
             action_dim=env.action_space.n,
             **agent_params
@@ -168,7 +197,11 @@ class HyperparameterTuner:
             total_reward = 0
             
             while not done:
-                action = agent.select_action(state)
+                # Use training-mode (test=False) action selection here to allow some
+                # exploration during tuning evaluation.  This encourages the agent
+                # to take BUY/SELL actions even if the network is still largely
+                # untrained, avoiding zero-trade episodes that lead to flat metrics.
+                action = agent.select_action(state)  # allow exploration
                 next_state, reward, done, _ = env.step(action)
                 next_state = np.reshape(next_state, [1, env.observation_space.shape[0]])
                 
@@ -222,9 +255,9 @@ class HyperparameterTuner:
             'max_drawdown': episode_drawdowns
         }
         
-        # Evaluate on test data
+        # Evaluate on validation data
         trade_env = ForexTradingEnv(
-            df=self.test_data,
+            df=self.val_data,
             trader_config=TraderConfig(
                 name="Default Trader",
                 risk_tolerance="medium",
@@ -249,7 +282,7 @@ class HyperparameterTuner:
             next_state, reward, done, _ = trade_env.step(action)
             state = np.reshape(next_state, [1, trade_env.observation_space.shape[0]])
         
-        # Calculate final metrics
+        # Calculate validation metrics
         account_values = trade_env.get_account_value_memory()
         trade_log = trade_env.get_trade_log()
         
@@ -489,7 +522,7 @@ class HyperparameterTuner:
         
         return plots
     
-    def get_best_params(self, results_df=None, metric='sharpe_ratio'):
+    def get_best_params(self, results_df=None, metric='sharpe_ratio', min_trades: int = 1):
         """
         Get the best hyperparameters based on a metric
         
@@ -499,6 +532,8 @@ class HyperparameterTuner:
             DataFrame containing results. If None, uses stored results.
         metric : str
             Metric to use for ranking models
+        min_trades : int
+            Minimum number of trades a model must have to be considered
             
         Returns:
         --------
@@ -510,19 +545,26 @@ class HyperparameterTuner:
                 raise ValueError("No results available. Run grid_search or random_search first.")
             results_df = pd.DataFrame(self.results)
         
-        # Find best model
-        if metric == 'max_drawdown':
-            # For drawdown, lower is better
-            best_idx = results_df[metric].idxmin()
+        # Optionally filter out models that took too few trades
+        if 'total_trades' in results_df.columns and min_trades > 0:
+            filtered_df = results_df[results_df['total_trades'].fillna(0) >= min_trades]
+            if filtered_df.empty:
+                # If nothing meets the requirement, fall back to original df
+                filtered_df = results_df
         else:
-            # For other metrics, higher is better
-            best_idx = results_df[metric].idxmax()
-        
-        best_model = results_df.iloc[best_idx]
+            filtered_df = results_df
+
+        # Find best model in the (possibly filtered) dataframe
+        if metric == 'max_drawdown':
+            best_idx = filtered_df[metric].idxmin()
+        else:
+            best_idx = filtered_df[metric].idxmax()
+
+        best_model = filtered_df.loc[best_idx]
         
         # Get parameter columns (exclude metrics)
         metric_cols = ['sharpe_ratio', 'total_return_pct', 'max_drawdown', 'win_rate', 
-                      'sortino_ratio', 'calmar_ratio', 'volatility', 'model_id']
+                      'sortino_ratio', 'calmar_ratio', 'volatility', 'model_id', 'total_trades']
         param_cols = [col for col in results_df.columns if col not in metric_cols]
         
         # Extract best parameters
@@ -572,8 +614,9 @@ class HyperparameterTuner:
             **env_params
         )
         
-        # Create agent
-        agent = DQLAgent(
+        # Create agent using factory instead of direct instantiation
+        agent = create_agent(
+            agent_type=self.agent_type,
             state_dim=env.observation_space.shape[0],
             action_dim=env.action_space.n,
             **agent_params

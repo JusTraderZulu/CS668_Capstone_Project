@@ -15,8 +15,15 @@ import os
 import sys
 import shutil  # NEW: for copying files
 
-# Add the project root to the Python path
-# Removed sys.path modification, '..')))
+# -----------------------------------------------------------------------------
+# Ensure the project root (two levels up) is on sys.path so that `import
+# dql_trading.*` works even when this script is executed directly with a relative
+# path like `python dql_trading/scripts/run_full_workflow.py ...`. Without this
+# adjustment, the import will fail and Telegram notifications cannot be sent.
+# -----------------------------------------------------------------------------
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 import argparse
 import subprocess
@@ -57,9 +64,16 @@ def parse_args():
                         help="Number of episodes for each hyperparameter evaluation")
     parser.add_argument("--n_iter", type=int, default=20, 
                         help="Number of iterations for random hyperparameter search")
+    parser.add_argument("--tuning_fraction", type=float, default=1.0,
+                        help="Fraction of data to use during hyperparameter tuning (to reduce memory)")
     parser.add_argument("--optimization_metric", type=str, default="sharpe_ratio", 
                         choices=["sharpe_ratio", "total_return_pct", "sortino_ratio", "calmar_ratio"],
                         help="Metric to optimize during hyperparameter tuning")
+    
+    # Reward goal for TraderConfig
+    parser.add_argument("--reward_goal", type=str, default="sharpe_ratio",
+                        choices=["sharpe_ratio", "profit", "sortino"],
+                        help="Reward function goal used inside the environment")
     
     # Agent parameters
     parser.add_argument("--agent_type", type=str, default="dql",
@@ -97,8 +111,11 @@ def run_hyperparameter_tuning(args):
         "--search_type", "random",
         "--n_iter", str(args.n_iter),
         "--episodes", str(args.tuning_episodes),
+        "--tuning_fraction", str(args.tuning_fraction),
         "--metric", args.optimization_metric,
-        "--results_dir", args.tuning_dir
+        "--results_dir", args.tuning_dir,
+        "--agent_type", args.agent_type,  # Pass agent_type to tuning script
+        "--reward_goal", args.reward_goal  # Pass reward_goal
     ]
     
     # Add optional parameters if provided
@@ -111,33 +128,48 @@ def run_hyperparameter_tuning(args):
     if getattr(args, "notify", False):
         cmd.append("--notify")
     
-    # Run the hyperparameter tuning process
-    logger.info(f"Running command: {' '.join(cmd)}")
-    try:
-        process = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        logger.info("Hyperparameter tuning completed successfully")
-        logger.debug(process.stdout)
-        
-        # Check if optimal parameters file was created
-        optimal_params_path = os.path.join(args.tuning_dir, "optimal_parameters.json")
-        if not os.path.exists(optimal_params_path):
-            logger.error(f"Optimal parameters file not found at {optimal_params_path}")
-            return False
-        
-        # NEW: copy optimal parameters to experiment directory so reports can find them
-        exp_dir = os.path.join(args.results_dir, args.experiment_name)
-        try:
-            os.makedirs(exp_dir, exist_ok=True)
-            shutil.copy2(optimal_params_path, os.path.join(exp_dir, "hyperparameters.json"))
-            logger.info("Copied optimal parameters to experiment directory")
-        except Exception as copy_err:
-            logger.warning(f"Failed to copy optimal parameters to experiment dir: {copy_err}")
-        
-        return True
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Hyperparameter tuning failed with exit code {e.returncode}")
-        logger.error(f"Error output: {e.stderr}")
+    # Launch tuner with unbuffered output so print statements appear immediately
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+
+    # Relay tuner stdout to our logger in real time
+    for line in process.stdout:
+        logger.info(line.rstrip())
+
+    exit_code = process.wait()
+    if exit_code != 0:
+        logger.error(f"Hyperparameter tuning failed with exit code {exit_code}")
         return False
+
+    logger.info("Hyperparameter tuning completed successfully")
+    
+    # Check if optimal parameters file was created
+    optimal_params_path = os.path.join(args.tuning_dir, "optimal_parameters.json")
+    if not os.path.exists(optimal_params_path):
+        logger.error(f"Optimal parameters file not found at {optimal_params_path}")
+        return False
+    
+    # NEW: copy optimal parameters to experiment directory so reports can find them
+    exp_dir = os.path.join(args.results_dir, args.experiment_name)
+    try:
+        os.makedirs(exp_dir, exist_ok=True)
+        shutil.copy2(optimal_params_path, os.path.join(exp_dir, "hyperparameters.json"))
+        logger.info("Copied optimal parameters to experiment directory")
+    except Exception as copy_err:
+        logger.warning(f"Failed to copy optimal parameters to experiment dir: {copy_err}")
+    
+    return True
 
 def train_model_with_optimal_params(args):
     """Train model using optimal parameters from hyperparameter tuning"""
@@ -153,7 +185,7 @@ def train_model_with_optimal_params(args):
     
     # Build command for training
     cmd = [
-        "python", "dql_trading/core/train.py",
+        sys.executable, "dql_trading/core/train.py",
         "--data_file", args.data_file,
         "--load_optimal_params", optimal_params_path,
         "--experiment_name", args.experiment_name,
@@ -161,6 +193,7 @@ def train_model_with_optimal_params(args):
         "--agent_type", args.agent_type,
         "--target_update_freq", str(args.target_update_freq),
         "--test",  # Include testing phase
+        "--reward_goal", args.reward_goal,
         "--progress_bar"  # Show progress bar
     ]
     
@@ -176,15 +209,31 @@ def train_model_with_optimal_params(args):
     
     # Run the training process
     logger.info(f"Running command: {' '.join(cmd)}")
-    try:
-        process = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        logger.info("Model training completed successfully")
-        logger.debug(process.stdout)
-        return True
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Model training failed with exit code {e.returncode}")
-        logger.error(f"Error output: {e.stderr}")
+
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+
+    for line in process.stdout:
+        logger.info(line.rstrip())
+
+    exit_code = process.wait()
+    if exit_code != 0:
+        logger.error(f"Model training failed with exit code {exit_code}")
         return False
+
+    logger.info("Model training completed successfully")
+    return True
 
 def generate_report(args):
     """Generate PDF report for the trained model"""
@@ -192,29 +241,36 @@ def generate_report(args):
     
     # Build command for report generation
     cmd = [
-        "python", "dql_trading/scripts/generate_report.py",
+        sys.executable, "dql_trading/scripts/generate_report.py",
         "--experiment", args.experiment_name,
         "--results_dir", args.results_dir
     ]
     
     # Run the report generation process
     logger.info(f"Running command: {' '.join(cmd)}")
+    
+    # Ensure the subprocess sees the project root on PYTHONPATH (same as other steps)
+    env = os.environ.copy()
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
+
     try:
-        process = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, text=True, env=env)
         logger.info("Report generation completed successfully")
-        logger.debug(process.stdout)
-        
-        # Try to extract the report path from the output
-        report_path = None
-        for line in process.stdout.split('\n'):
-            if "Report generated:" in line:
-                report_path = line.split("Report generated:")[-1].strip()
-        
-        if report_path and os.path.exists(report_path):
+
+        # Compute expected path directly
+        report_path = os.path.join(
+            args.results_dir,
+            args.experiment_name,
+            f"{args.experiment_name}_report.pdf",
+        )
+
+        if os.path.exists(report_path):
             logger.info(f"Report successfully generated at: {report_path}")
         else:
-            logger.warning("Report was generated but couldn't determine the path")
-        
+            logger.warning(
+                f"Report generation finished but '{report_path}' not found."
+            )
         return True
     except subprocess.CalledProcessError as e:
         logger.error(f"Report generation failed with exit code {e.returncode}")
@@ -225,6 +281,21 @@ def run_workflow(args):
     """Execute the full workflow pipeline"""
     start_time = time.time()
     logger.info(f"Starting full workflow for experiment: {args.experiment_name}")
+    
+    # Attach a per-experiment file handler so logs go to logs/<experiment>.log
+    try:
+        os.makedirs("logs", exist_ok=True)
+        exp_log_path = os.path.join("logs", f"{args.experiment_name}.log")
+        exp_handler = logging.FileHandler(exp_log_path)
+        exp_handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        )
+        # Avoid adding duplicate handlers if run_workflow is called multiple times
+        if exp_handler not in logger.handlers:
+            logger.addHandler(exp_handler)
+            logger.info(f"Attached experiment log handler at {exp_log_path}")
+    except Exception as log_err:
+        logger.warning(f"Failed to attach experiment log handler: {log_err}")
     
     # Create results directory
     os.makedirs(args.results_dir, exist_ok=True)
@@ -329,6 +400,7 @@ def main(data_file=None, experiment_name=None, skip_tuning=False, agent_type="dq
     args.episodes = kwargs.get('episodes', 100)
     args.tuning_episodes = kwargs.get('tuning_episodes', 20)
     args.n_iter = kwargs.get('n_iter', 20)
+    args.tuning_fraction = kwargs.get('tuning_fraction', 1.0)
     args.optimization_metric = kwargs.get('optimization_metric', 'sharpe_ratio')
     args.target_update_freq = kwargs.get('target_update_freq', 10)
     args.results_dir = kwargs.get('results_dir', 'results')
@@ -340,5 +412,6 @@ def main(data_file=None, experiment_name=None, skip_tuning=False, agent_type="dq
     args.tuning_dir = kwargs.get('tuning_dir', default_tuning_dir)
     args.start_date = kwargs.get('start_date', None)
     args.end_date = kwargs.get('end_date', None)
+    args.reward_goal = kwargs.get('reward_goal', 'sharpe_ratio')
     
     return run_workflow(args) 

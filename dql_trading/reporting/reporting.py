@@ -444,7 +444,7 @@ class TradingReport:
         self.pdf.text(comparison_text)
         
     def add_hyperparameter_analysis(self, parameters: Dict[str, Dict[str, Any]]):
-        """Add hyperparameter analysis to the report"""
+        """Add model configuration & hyperparameters section"""
         self.pdf.add_page()
         self._section_pages["Model Configuration and Hyperparameters"] = self.pdf.page_no()
         self.pdf.chapter_title("Model Configuration and Hyperparameters")
@@ -710,6 +710,84 @@ class TradingReport:
             "4. Implement real-time monitoring for live trading deployment."
         )
         
+    def add_hyperparameter_tuning(
+        self,
+        best_params: Dict[str, Any],
+        results_path: Optional[str] = None,
+        best_metrics: Optional[Dict[str, Any]] = None,
+    ):
+        """Add a summary of hyperparameter tuning results.
+
+        Parameters
+        ----------
+        best_params : dict
+            Dictionary of best parameters discovered.
+        results_path : str | None
+            Optional path to the full CSV of tuning runs.
+        """
+        self.pdf.add_page()
+        self._section_pages["Hyperparameter Tuning Summary"] = self.pdf.page_no()
+
+        self.pdf.chapter_title("Hyperparameter Tuning Summary")
+
+        # Compute column widths dynamically based on usable page width
+        page_w = self.pdf.w - 2 * self.pdf.l_margin
+        metric_w = int(page_w * 0.55)
+        value_w = int(page_w - metric_w)
+
+        row_height = 7
+
+        # Table header
+        self.pdf.set_font("Arial", "B", 10)
+        self.pdf.set_fill_color(*self.pdf.accent_color)
+        self.pdf.cell(metric_w, row_height, "Parameter", 1, 0, "C", True)
+        self.pdf.cell(value_w, row_height, "Value", 1, 1, "C", True)
+
+        # Formatting helper
+        def _fmt(val: Any) -> str:
+            """Format values to fit within value_w; truncate with '...' in ASCII"""
+            if isinstance(val, float):
+                return f"{val:.6g}"
+            if isinstance(val, (list, dict)):
+                snippet = json.dumps(val, sort_keys=True)
+                if len(snippet) > 40:
+                    snippet = snippet[:37] + "..."
+                return snippet
+            text = str(val)
+            if len(text) > 40:
+                text = text[:37] + "..."
+            return text
+
+        self.pdf.set_font("Arial", "", 10)
+        fill = False
+        for k, v in best_params.items():
+            self.pdf.cell(metric_w, row_height, str(k), 1, 0, "L", fill)
+            self.pdf.cell(value_w, row_height, _fmt(v), 1, 1, "R", fill)
+            fill = not fill
+
+        if best_metrics:
+            self.pdf.ln(2)
+            self.pdf.section_title("Best Model Performance")
+
+            # show key metrics
+            self.pdf.set_font("Arial", "B", 10)
+            self.pdf.set_fill_color(*self.pdf.accent_color)
+            self.pdf.cell(metric_w, row_height, "Metric", 1, 0, "C", True)
+            self.pdf.cell(value_w, row_height, "Value", 1, 1, "C", True)
+
+            self.pdf.set_font("Arial", "", 10)
+            fill = False
+            for k, v in best_metrics.items():
+                self.pdf.cell(metric_w, row_height, str(k), 1, 0, "L", fill)
+                self.pdf.cell(value_w, row_height, _fmt(v), 1, 1, "R", fill)
+                fill = not fill
+
+        if results_path:
+            self.pdf.ln(4)
+            self.pdf.set_font("Arial", "I", 9)
+            self.pdf.multi_cell(0, 5, f"Full tuning results: {results_path}")
+            self.pdf.ln(2)
+        
     def generate(self) -> str:
         """Generate the final PDF report and return the file path"""
         # Ensure output folder exists
@@ -730,11 +808,14 @@ class TradingReport:
                 "Training Performance Analysis",
                 "Out-of-Sample Testing Results",
                 "Comparison with Baseline Strategies",
+                "Hyperparameter Tuning Summary",
                 "Model Configuration and Hyperparameters",
                 "Feature Importance Analysis",
                 "Conclusion and Recommendations",
             ]
             for key in ordered_keys:
+                if key not in self._section_pages:
+                    continue  # skip sections that weren't added
                 page_no = self._section_pages.get(key, "-")
                 self.pdf.cell(0, 10, key, 0, 0)
                 self.pdf.cell(0, 10, str(page_no), 0, 1, "R")

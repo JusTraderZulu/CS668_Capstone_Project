@@ -839,6 +839,46 @@ def generate_report(experiment_name, results_dir="results", output_dir=None):
                 logger.error(f"Error adding baseline comparison: {e}")
                 logger.warning("Will continue without baseline comparison section")
         
+        # --------------------------------------------------------------
+        # NEW: Hyperparameter tuning summary section
+        # --------------------------------------------------------------
+        tuning_dir = os.path.join(results_dir, experiment_name, "hyperparameter_tuning")
+        optimal_params_path = os.path.join(tuning_dir, "optimal_parameters.json")
+
+        if os.path.exists(optimal_params_path):
+            try:
+                with open(optimal_params_path, "r") as f:
+                    best_params = json.load(f)
+
+                # Try to find the CSV of search results (first file matching pattern)
+                csv_path = None
+                if os.path.isdir(tuning_dir):
+                    for fname in os.listdir(tuning_dir):
+                        if fname.endswith(".csv") and "search_results" in fname:
+                            csv_path = os.path.join(tuning_dir, fname)
+                            break
+
+                # Extract best metrics from the CSV (if found)
+                best_metrics = None
+                if csv_path and os.path.exists(csv_path):
+                    try:
+                        df = pd.read_csv(csv_path)
+                        metric_col = 'sharpe_ratio' if 'sharpe_ratio' in df.columns else None
+                        if metric_col and not df.empty:
+                            # Determine best row (max sharpe, else first row)
+                            best_idx = df[metric_col].idxmax()
+                            # Select a handful of metrics to display
+                            cols = [c for c in ['sharpe_ratio','total_return_pct','max_drawdown','win_rate','total_trades'] if c in df.columns]
+                            best_metrics = df.loc[best_idx, cols].to_dict()
+                    except Exception as e:
+                        logger.warning(f"Could not extract best metrics from tuning CSV: {e}")
+
+                report.add_hyperparameter_tuning(best_params, results_path=csv_path, best_metrics=best_metrics)
+                logger.info("Added hyperparameter tuning summary to report")
+            except Exception as e:
+                logger.error(f"Error adding hyperparameter tuning section: {e}")
+                logger.warning("Will continue without hyperparameter tuning summary")
+        
         # Add hyperparameter analysis
         if metrics["hyperparams"]:
             try:

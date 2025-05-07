@@ -108,6 +108,19 @@ def parse_args():
     full_parser.add_argument("--n_iter", type=int, default=20, help="Number of iterations for hyperparameter search")
     full_parser.add_argument("--optimization_metric", type=str, default="sharpe_ratio", help="Optimization metric")
     full_parser.add_argument("--target_update_freq", type=int, default=10, help="Target update frequency")
+    full_parser.add_argument("--tuning_fraction", type=float, default=1.0, help="Fraction of data used during tuning")
+    full_parser.add_argument("--reward_scaling", type=float, default=1e-4, help="Reward scaling factor")
+    full_parser.add_argument("--transaction_cost", type=float, default=0.0001, help="Transaction cost percentage")
+    # Trader-config overrides
+    full_parser.add_argument("--risk_tolerance", type=str, default="medium", choices=["low","medium","high"], help="Trader risk tolerance")
+    full_parser.add_argument("--reward_goal", type=str, default="sharpe_ratio", choices=["sharpe_ratio","profit","sortino","calmar"], help="Reward goal used inside env")
+    full_parser.add_argument("--max_drawdown", type=float, default=0.1, help="Maximum acceptable drawdown")
+    full_parser.add_argument("--target_volatility", type=float, default=0.02, help="Target volatility")
+    full_parser.add_argument("--stop_loss", type=float, default=0.03, help="Stop-loss percentage")
+    full_parser.add_argument("--take_profit", type=float, default=0.05, help="Take-profit percentage")
+    full_parser.add_argument("--position_sizing", type=str, default="dynamic", choices=["fixed","dynamic"], help="Position sizing method")
+    full_parser.add_argument("--slippage", type=float, default=0.0002, help="Slippage percentage")
+    full_parser.add_argument("--buy_pct", type=float, default=0.10, help="Fraction of equity allocated when buying")
     # Optional Telegram notification flag for full workflow
     full_parser.add_argument(
         "--notify",
@@ -143,6 +156,7 @@ def parse_args():
         default=20,
         help="Number of episodes for each evaluation",
     )
+    tune_parser.add_argument("--tuning_fraction", type=float, default=1.0, help="Fraction of data used during tuning")
     # NEW: allow tuning different agent types
     tune_parser.add_argument(
         "--agent_type",
@@ -167,6 +181,13 @@ def parse_args():
     eval_parser = subparsers.add_parser("evaluate", help="Evaluate a trained model")
     eval_parser.add_argument("--experiment", type=str, required=True, help="Experiment name")
     eval_parser.add_argument("--data_file", type=str, required=True, help="Data file name")
+    eval_parser.add_argument(
+        "--agent_type",
+        type=str,
+        default="dql",
+        choices=["dql", "custom", "memory"],
+        help="Type of agent to load for evaluation",
+    )
     
     # Compare command
     compare_parser = subparsers.add_parser("compare", help="Compare different strategies")
@@ -374,6 +395,18 @@ def main():
                 n_iter=getattr(args, "n_iter", 20),
                 optimization_metric=getattr(args, "optimization_metric", "sharpe_ratio"),
                 target_update_freq=getattr(args, "target_update_freq", 10),
+                tuning_fraction=getattr(args, "tuning_fraction", 1.0),
+                reward_scaling=getattr(args, "reward_scaling", 1e-4),
+                transaction_cost=getattr(args, "transaction_cost", 0.0001),
+                risk_tolerance=getattr(args, "risk_tolerance", "medium"),
+                reward_goal=getattr(args, "reward_goal", "sharpe_ratio"),
+                max_drawdown=getattr(args, "max_drawdown", 0.1),
+                target_volatility=getattr(args, "target_volatility", 0.02),
+                stop_loss=getattr(args, "stop_loss", 0.03),
+                take_profit=getattr(args, "take_profit", 0.05),
+                position_sizing=getattr(args, "position_sizing", "dynamic"),
+                slippage=getattr(args, "slippage", 0.0002),
+                buy_pct=getattr(args, "buy_pct", 0.10),
                 notify=getattr(args, "notify", False),
             )
             
@@ -387,6 +420,7 @@ def main():
                 episodes=args.episodes,
                 agent_type=getattr(args, "agent_type", "dql"),
                 notify=getattr(args, "notify", False),
+                tuning_fraction=getattr(args, "tuning_fraction", 1.0),
             )
             
         elif args.command == "report":
@@ -396,7 +430,8 @@ def main():
             from dql_trading.evaluation.evaluate import main as eval_main
             eval_main(
                 experiment=args.experiment,
-                data_file=args.data_file
+                data_file=args.data_file,
+                agent_type=getattr(args, "agent_type", "dql"),
             )
             
         elif args.command == "compare":

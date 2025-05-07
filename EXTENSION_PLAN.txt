@@ -1,0 +1,84 @@
+## Plan for Extending DQL-Trading with Time-Series Forecasting and OANDA Execution
+
+**Goal:** Enable the DQL-Trading framework to support time-series forecasting models for generating trading signals and execute these signals via OANDA (initially paper trading).
+
+**Core Idea:** Create a modular architecture where different types of agents (DQL, Forecaster, etc.) can be plugged into a common simulation environment and, eventually, a live execution module.
+
+### Phase 1: Agent Abstraction & Time-Series Forecaster Agent
+
+1.  **Standardize the Agent Interface (`dql_trading/agents/base_agent.py`):
+    *   Define a `BaseAgent` class with common methods:
+        *   `__init__(self, state_dim, action_dim, **kwargs)`
+        *   `select_action(self, state, current_price_data, **kwargs)`: Takes market state and recent price data, returns a trading action (e.g., 0 for Hold, 1 for Buy, 2 for Sell).
+        *   `load_model(self, path)`: For loading pre-trained models.
+        *   `save_model(self, path)`: (Optional for forecasters if trained separately).
+    *   The existing `DQLAgent` will be refactored to inherit from this `BaseAgent`.
+
+2.  **Implement `TimeSeriesForecasterAgent` (`dql_trading/agents/time_series_forecaster_agent.py`):
+    *   Inherits from `BaseAgent`.
+    *   `__init__(self, model_path, prediction_threshold=0.001, **kwargs)`: Takes path to a pre-trained forecasting model.
+    *   `_load_forecasting_model(self, path)`: Loads the specified forecasting model (e.g., scikit-learn, PyTorch, TensorFlow model).
+    *   `select_action(self, state, current_price_data, **kwargs)`:
+        1.  Preprocesses `current_price_data` for the forecasting model.
+        2.  Uses the loaded model to predict future price movement.
+        3.  Translates the prediction into a Buy/Sell/Hold signal based on a configurable `prediction_threshold`.
+
+3.  **Develop a Separate Training Script for Forecasting Models (`scripts/train_forecaster.py`):
+    *   Loads historical price data (e.g., using `dql_trading/utils/data_processing.py`).
+    *   Performs feature engineering suitable for time-series forecasting (e.g., lags, rolling means, volatility measures).
+    *   Splits data into training, validation, and test sets.
+    *   Defines, trains, and evaluates a chosen forecasting model (e.g., LSTM, GRU, Prophet, ARIMA, or simpler regression models like RandomForestRegressor).
+    *   Saves the trained forecasting model to a specified path (e.g., `results/forecasting_models/my_lstm_eurusd.pkl`).
+
+4.  **Update CLI & Workflow for New Agent Type:
+    *   Add "forecaster" (or a more specific name like "lstm_forecaster") to the `--agent_type` choices in `dql_trading.py` and `dql_trading/cli/main.py`.
+    *   Modify the `train` command: When `agent_type` is a forecaster, it should primarily load the pre-trained forecasting model. The "training episodes" in this context might become a backtesting period using the forecaster.
+    *   Modify the `tune` command: It should target hyperparameters relevant to the training of the *forecasting model* itself (e.g., LSTM layers, sequence length, learning rate for the forecaster's optimizer) rather than DQL agent parameters.
+    *   The `HyperparameterTuner` and main training/evaluation loops will need to be adapted to handle this new agent type, ensuring they call the `BaseAgent` interface methods correctly.
+
+### Phase 2: OANDA Paper Trading Execution Module
+
+1.  **Develop OANDA API Integration (`dql_trading/execution/oanda_executor.py`):
+    *   Create an `OandaExecutor` class.
+    *   `__init__(self, access_token, account_id, environment="practice")`: Initializes connection to OANDA API (using `oandapyV20` or similar).
+    *   Methods for core trading operations:
+        *   `get_account_summary()`
+        *   `place_market_order(self, instrument, units, stop_loss_pips=None, take_profit_pips=None)`: Translates agent signals into OANDA market orders. Potentially include logic for stop-loss/take-profit if signals provide this detail.
+        *   `get_open_trades()`
+        *   `close_trade(self, trade_id)`
+        *   `get_latest_market_data(self, instrument, granularity, count)`: To feed the agent.
+
+2.  **Create New CLI Command (`execute`):
+    *   Example: `python dql_trading.py execute --agent_type forecaster --model_path path/to/forecaster.pkl --account_id OANDA_PAPER_ACCOUNT_ID --token OANDA_ACCESS_TOKEN --symbol EUR_USD --paper`
+    *   This command will:
+        1.  Load the specified agent (conforming to `BaseAgent`).
+        2.  Initialize `OandaExecutor` for paper trading.
+        3.  Enter an execution loop:
+            a.  Fetch latest market data from OANDA.
+            b.  Pass data to `agent.select_action()`.
+            c.  If action is Buy or Sell, use `OandaExecutor` to place paper trades.
+            d.  Log all actions, OANDA API responses, and paper trade outcomes.
+
+3.  **Signal Enhancement (Forward Testing Consideration):
+    *   You're right that a DQL agent can also learn from forward testing. The signals from any agent (`BaseAgent` derivative) might need to be enhanced to include not just Buy/Sell/Hold, but potentially also:
+        *   Confidence scores (if applicable).
+        *   Suggested stop-loss or take-profit levels (if the agent's logic can derive these).
+        *   Position sizing information (e.g., percentage of capital to risk).
+    *   The `OandaExecutor` would then use these richer signals if available.
+
+### Phase 3: Simulation Environment Enhancement (Backtesting Forecasters)
+
+1.  **Adapt `ForexTradingEnv` or Create a New Backtesting Engine:
+    *   Ensure the simulation environment can consume actions from any `BaseAgent`.
+    *   For a forecasting agent, the environment needs to simulate how its Buy/Sell/Hold signals (based on price predictions) would translate into trades and P&L over historical data.
+    *   This is crucial for evaluating the forecasting strategy *before* paper or live trading.
+    *   The environment's `step()` function will take the action from the forecaster and simulate its impact.
+
+### Considerations:
+
+*   **Configuration Management:** How to manage paths to trained models, API keys, and agent-specific parameters (e.g., prediction thresholds).
+*   **Logging & Monitoring:** Robust logging for both backtesting/simulation and paper/live execution.
+*   **Error Handling:** Graceful handling of API errors, network issues, unexpected data from OANDA.
+*   **Risk Management:** While the agent decides signals, a separate layer for risk management (e.g., max position size, daily loss limits) might be beneficial for the execution module.
+
+This plan provides a structured approach to significantly expand the capabilities of the DQL-Trading framework. 

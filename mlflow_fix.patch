@@ -1,0 +1,22 @@
+--- a/dql_trading/core/train.py
++++ b/dql_trading/core/train.py
+@@ -525,8 +525,14 @@ def train_agent(args, experiment_name: str):
+         
+         # Add test_ prefix to test metrics
+         test_metric_dict = {}
+-        for k, v in test_metrics.items():
+-            if isinstance(v, (int, float)) or (hasattr(v, "item") and callable(getattr(v, "item"))):
+-                test_metric_dict[f"test_{k}"] = float(v)
++        if isinstance(test_metrics, dict):  # Check if test_metrics is a dictionary
++            for k, v in test_metrics.items():
++                if isinstance(v, (int, float)) or (hasattr(v, "item") and callable(getattr(v, "item"))):
++                    test_metric_dict[f"test_{k}"] = float(v)
++        else:
++            # Handle the case where test_metrics is not a dictionary
++            logger.logger.warning(f"test_metrics is not a dictionary: {type(test_metrics)}")
+         
+-        # Log test metrics to MLflow
+-        mlflow.log_metrics(test_metric_dict)
++        # Log test metrics to MLflow only if we have metrics to log
++        if test_metric_dict:
++            mlflow.log_metrics(test_metric_dict) 

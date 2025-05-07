@@ -49,7 +49,7 @@ def evaluate_agent(agent, env, render=False):
         # Select action with no exploration (greedy)
         old_epsilon = agent.epsilon
         agent.epsilon = 0  # No exploration during evaluation
-        action = agent.select_action(state)
+        action = agent.select_action(state, test=True)
         agent.epsilon = old_epsilon  # Restore exploration rate
         
         # Take the action

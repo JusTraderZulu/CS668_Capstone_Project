@@ -1,10 +1,11 @@
-FROM pytorch/pytorch:1.10.0-cuda11.3-cudnn8-runtime
+FROM pytorch/pytorch:2.2.0-cuda11.8-cudnn8-runtime
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     wget \
+    build-essential \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,6 +28,9 @@ RUN mkdir -p data results logs
 # Environment variable defaults
 ENV TELEGRAM_BOT_TOKEN=""
 ENV TELEGRAM_CHAT_ID=""
+
+# Ensure head-less matplotlib backend inside the container
+ENV MPLBACKEND=Agg
 
 # Entry point
 ENTRYPOINT ["python", "dql_trading.py"] 

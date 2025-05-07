@@ -44,6 +44,33 @@ class TradingReportBuilder:
         self.pdf.add_page()
         self._section_pages["Model Configuration and Hyperparameters"] = self.pdf.page_no()
 
+    def add_hyperparameter_tuning(self, best_params: dict, results_path: str | None = None):
+        """Insert a brief hyper-parameter tuning summary.
+
+        Parameters
+        ----------
+        best_params : dict
+            Dictionary of the best parameters found.
+        results_path : str | None
+            Optional path to the full CSV of tuning results – will be referenced
+            in the PDF so the reader can locate the data.
+        """
+        self.pdf.add_page()
+        self._section_pages["Hyperparameter Tuning Summary"] = self.pdf.page_no()
+
+        self.pdf.chapter_title("Hyperparameter Tuning Summary")
+
+        # Best parameters table
+        self.pdf.set_font("Arial", size=10)
+        for k, v in best_params.items():
+            self.pdf.cell(60, 6, str(k), 0, 0)
+            self.pdf.cell(0, 6, str(v), 0, 1)
+
+        if results_path:
+            self.pdf.ln(4)
+            self.pdf.set_font("Arial", "I", 9)
+            self.pdf.multi_cell(0, 5, f"Full tuning results CSV: {results_path}")
+
     def add_feature_importance(self, feature_importance_data: Optional[Dict[str, float]] = None,
                                feature_importance_path: Optional[str] = None):
         self.pdf.add_page()
@@ -70,6 +97,7 @@ class TradingReportBuilder:
                 "Training Performance Analysis",
                 "Out-of-Sample Testing Results",
                 "Comparison with Baseline Strategies",
+                "Hyperparameter Tuning Summary",
                 "Model Configuration and Hyperparameters",
                 "Feature Importance Analysis",
                 "Conclusion and Recommendations",
